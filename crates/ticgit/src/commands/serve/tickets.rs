@@ -16,6 +16,32 @@ use crate::commands::open_store;
 use crate::render;
 use crate::timefmt::relative_time;
 
+/// Which view mode the page is rendering. Controls the active nav pill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum View {
+    List,
+    Kanban,
+    Flow,
+}
+
+impl View {
+    fn label(self) -> &'static str {
+        match self {
+            View::List => "List",
+            View::Kanban => "Kanban",
+            View::Flow => "Flow",
+        }
+    }
+
+    fn path(self) -> &'static str {
+        match self {
+            View::List => "/",
+            View::Kanban => "/kanban",
+            View::Flow => "/flow",
+        }
+    }
+}
+
 // -- responses -------------------------------------------------------------
 
 pub(super) fn list_response(request: &Request) -> Result<Response> {
@@ -57,7 +83,7 @@ pub(super) fn detail_response(reference: &str) -> Result<Response> {
 
 /// The list filters we accept as query params. Mirrors `ti list`'s flags.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct ListQuery {
+pub(super) struct ListQuery {
     status: Option<String>,
     state: Option<String>,
     tags: Vec<String>,
@@ -69,7 +95,7 @@ struct ListQuery {
 }
 
 impl ListQuery {
-    fn from_request(request: &Request) -> Self {
+    pub(super) fn from_request(request: &Request) -> Self {
         let clean = |value: Option<&str>| {
             value
                 .map(str::trim)
@@ -94,7 +120,7 @@ impl ListQuery {
 
     /// Translate into a `ticgit-lib` filter, defaulting to open tickets
     /// the way `ti list` and the TUI's Default view do.
-    fn filter(&self) -> Result<Filter> {
+    pub(super) fn filter(&self) -> Result<Filter> {
         let mut status = match self.status.as_deref() {
             Some("all") => None,
             Some(spec) => Some(TicketStatus::parse(spec)?),
@@ -176,6 +202,16 @@ impl ListQuery {
         format!("/?{query}")
     }
 
+    /// Like `href` but targets a different path (e.g. `/kanban`, `/flow`).
+    pub(super) fn href_on(&self, path: &str) -> String {
+        let base = self.href(None);
+        if base == "/" {
+            return path.to_string();
+        }
+        // base is "/?query..." — replace the leading "/" with the path
+        path.to_string() + &base[1..]
+    }
+
     /// Toggle direction when re-sorting by the column already in use.
     fn order_href(&self, key: &str) -> String {
         let next = match self.order.as_deref() {
@@ -207,7 +243,7 @@ impl ListQuery {
 
 fn list_page(page: &Page, query: &ListQuery, tickets: &[Ticket]) -> String {
     let mut body = String::new();
-    body.push_str(&header(page, query));
+    body.push_str(&header(page, query, View::List));
 
     if tickets.is_empty() {
         body.push_str("<p class=\"empty\">No tickets match this view.</p>");
@@ -327,7 +363,7 @@ fn tag_chips(query: &ListQuery, ticket: &Ticket) -> String {
         .join(" ")
 }
 
-fn header(page: &Page, query: &ListQuery) -> String {
+pub(super) fn header(page: &Page, query: &ListQuery, view: View) -> String {
     let views: [(&str, String); 4] = [
         ("Open", ListQuery::default().href(None)),
         (
@@ -358,12 +394,26 @@ fn header(page: &Page, query: &ListQuery) -> String {
         ),
     ];
     let current = query.href(None);
+    let view_modes = [View::List, View::Kanban, View::Flow];
+    let view_nav = view_modes
+        .iter()
+        .map(|v| {
+            format!(
+                "<a class=\"view{}\" href=\"{}\">{}</a>",
+                if *v == view { " active" } else { "" },
+                escape(&query.href_on(v.path())),
+                v.label()
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+
     let nav = views
         .iter()
         .map(|(label, href)| {
             format!(
                 "<a class=\"view{}\" href=\"{}\">{label}</a>",
-                if *href == current { " active" } else { "" },
+                if *href == current && view == View::List { " active" } else { "" },
                 escape(href)
             )
         })
@@ -391,9 +441,9 @@ fn header(page: &Page, query: &ListQuery) -> String {
     }
 
     format!(
-        "<header><h1><a href=\"/\">{}</a></h1><nav>{nav}</nav>\
+        "<header><h1><a href=\"/\">{}</a></h1><nav>{nav}</nav><nav class=\"modes\">{view_nav}</nav>\
          <form method=\"get\" action=\"/\">{hidden}\
-         <input type=\"search\" name=\"q\" placeholder=\"search\" value=\"{}\"></form></header>{}",
+         <input type=\"search\" name=\"q\" placeholder=\"search\" value=\"{}\"></form></header>{}", 
         escape(&page.repo),
         escape(query.search.as_deref().unwrap_or_default()),
         active_filters(query),

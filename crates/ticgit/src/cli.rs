@@ -25,7 +25,7 @@ use crate::commands;
   mine       List tickets assigned to you
   history    Show change history for a ticket
   tui        Browse open tickets in an interactive terminal UI
-  serve      Browse tickets in your web browser
+  serve      Browse tickets in a web browser (list, kanban, flow)
 
 \x1b[1;36mWork on Tickets:\x1b[0m
   checkout, co  Select a ticket as \"current\"

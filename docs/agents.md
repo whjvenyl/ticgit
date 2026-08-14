@@ -130,6 +130,21 @@ ti reset
 ti reset --yes   # skip confirmation
 ```
 
+## Web View
+
+Browse tickets in a browser with three read-only views:
+
+```sh
+ti serve
+ti serve --open
+```
+
+- List (`/`) — sortable table
+- Kanban (`/kanban`) — board grouped by lifecycle state
+- Flow (`/flow`) — dependency graph (React Flow)
+
+All views accept the same query filters as `ti list` (e.g. `/kanban?tag=bug`).
+
 ## Code Reviews
 
 Open a review when a branch is ready for review. Link it to the ticket so the

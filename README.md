@@ -162,6 +162,23 @@ ti views bugs
 ti list --view bugs
 ```
 
+## Web View
+
+Browse tickets in your browser with `ti serve`:
+
+```sh
+ti serve
+ti serve --open
+```
+
+Three read-only views are available:
+
+- **List** (`/`) — sortable table, same columns as `ti list`
+- **Kanban** (`/kanban`) — board grouped by lifecycle state (new, assigned, in-progress, blocked, review)
+- **Flow** (`/flow`) — dependency graph rendered with [React Flow](https://xyflow.com/), showing `depends_on` and parent/child edges
+
+All views share the same query filters (`?tag=bug`, `?state=blocked`, `?assigned=you@example.com`, etc.). A JSON API is available at `/tickets.json`.
+
 ## Sync
 
 TicGit delegates storage and transfer to `git-meta-lib`.
