@@ -303,7 +303,7 @@ fn document(title: &str, body: &str) -> String {
     format!(
         "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
-         <title>{}</title><style>{STYLE}</style></head><body><main>{body}</main></body></html>\n",
+         <title>{}</title><style>{STYLE}</style></head><body><main>{body}</main>{KANBAN_SCRIPT}</body></html>\n",
         escape(title)
     )
 }
@@ -341,7 +341,7 @@ td.prio{color:#a855f7}td.age,td.prio,td.id{white-space:nowrap}\
 td.title a{font-weight:500}\
 tr.closed td.title a{color:var(--dim);text-decoration:line-through}\
 td.who{color:var(--dim);white-space:nowrap}td.who.mine{color:#d97706;font-weight:600}\
-.children{color:var(--dim)}\
+.children{color:var(--dim)}.parent{color:var(--dim);font-size:12px;margin-right:4px}tr.sub td.title{padding-left:20px}\
 .tag{font-size:12px;border-radius:4px;padding:1px 6px;background:var(--chip);white-space:nowrap}\
 .tag-0{color:#2563eb}.tag-1{color:#0891b2}.tag-2{color:#16a34a}.tag-3{color:#ca8a04}\
 .tag-4{color:#c026d3}.tag-5{color:#0ea5e9}.tag-6{color:#65a30d}.tag-7{color:#e11d48}\
@@ -357,7 +357,14 @@ dd{margin:2px 0 0}\
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:24px 0 8px}\
 .prose{white-space:pre-wrap;word-wrap:break-word;font:inherit;margin:0;\
 background:var(--chip);border-radius:6px;padding:12px}\
-.comment{margin-bottom:12px}.byline{color:var(--dim);font-size:12px;margin:0 0 4px}nav.modes{display:flex;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}.kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}.kanban-col{flex:0 0 240px;background:var(--chip);border-radius:8px;padding:8px;display:flex;flex-direction:column;min-height:60px}.kanban-col h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 8px;padding:2px 4px}.kanban-col h3 .n{float:right;font-weight:400}.kanban-cards{display:flex;flex-direction:column;gap:6px}.kcard{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;display:block}.kcard:hover{border-color:var(--accent);text-decoration:none}.kcard .kt{font-weight:500;font-size:13px;line-height:1.3;margin-bottom:4px}.kcard .km{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim)}.kcard .kid{font-family:inherit;color:var(--dim)}.kcard .kp{color:#a855f7}.kcard .ka{color:#d97706}.flow-wrap{width:100%;height:calc(100vh - 120px);border:1px solid var(--line);border-radius:8px;overflow:hidden}.flow-empty{color:var(--dim);margin-top:16px}.fnode{width:200px;padding:6px 8px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.fnode-id{color:var(--dim);font-size:11px}.fnode-title{font-weight:500;margin:2px 0 4px}.fnode-state{font-size:10px;border-radius:3px;padding:1px 5px;background:var(--chip)}";
+.comment{margin-bottom:12px}.byline{color:var(--dim);font-size:12px;margin:0 0 4px}nav.modes{display:flex;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}.kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}.kanban-col{flex:0 0 240px;background:var(--chip);border-radius:8px;padding:8px;display:flex;flex-direction:column;min-height:60px}.kanban-col h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 8px;padding:2px 4px}.kanban-col h3 .n{float:right;font-weight:400}.kanban-cards{display:flex;flex-direction:column;gap:6px}.kcard{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;display:block}.kcard:hover{border-color:var(--accent);text-decoration:none}.kcard .kt{font-weight:500;font-size:13px;line-height:1.3;margin-bottom:4px}.kcard .km{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim)}.kcard .kid{font-family:inherit;color:var(--dim)}.kcard .kp{color:#a855f7}.kcard .kpar{color:var(--dim)}.kcard .ka{color:#d97706}.kcard .kp{color:var(--dim)}.kcard .kc{color:var(--dim)}.kcard-sub{border-left:3px solid var(--accent)}.kgroup{display:flex;flex-direction:column;gap:6px}.kcard-parent{border-left:3px solid var(--accent)}.ktoggle{display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--dim);font:inherit;font-size:11px;cursor:pointer;padding:2px 4px;border-radius:4px}.ktoggle:hover{background:var(--hover)}.ktoggle .kcount{background:var(--chip);border-radius:999px;padding:0 6px}.kchildren{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:2px solid var(--line);margin-left:8px}.kchildren .kcard{font-size:12px;opacity:.9}.flow-wrap{width:100%;height:calc(100vh - 120px);border:1px solid var(--line);border-radius:8px;overflow:hidden}.flow-empty{color:var(--dim);margin-top:16px}.fnode{width:200px;padding:6px 8px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.fnode-id{color:var(--dim);font-size:11px}.fnode-title{font-weight:500;margin:2px 0 4px}.fnode-state{font-size:10px;border-radius:3px;padding:1px 5px;background:var(--chip)}";
+
+const KANBAN_SCRIPT: &str = "<script>\
+function kanbanToggle(b){{var g=b.closest('.kgroup');var c=g.querySelector('.kchildren');\
+var x=b.getAttribute('aria-expanded')==='true';\
+c.style.display=x?'none':'flex';b.setAttribute('aria-expanded',x?'false':'true');\
+b.innerHTML=(x?'\\u25B6':'\\u25BC')+'<span class=\"kcount\">'+c.children.length+'</span>';}}\
+</script>";
 
 fn escape(value: &str) -> String {
     let mut out = String::with_capacity(value.len());

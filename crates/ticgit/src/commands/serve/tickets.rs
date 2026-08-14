@@ -309,12 +309,22 @@ fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> Str
             ticket.children.len()
         )
     };
+    let parent = if let Some(pid) = ticket.parent {
+        format!(
+            "<span class=\"parent\">↳ {}</span> ",
+            escape(&short_uuid(&pid))
+        )
+    } else {
+        String::new()
+    };
 
     let mut out = format!(
         "<tr class=\"{}\"><td class=\"id\"><a href=\"/t/{}\">{}</a></td>\
          <td class=\"age\">{}</td><td class=\"prio\">{}</td>",
         if ticket.status == TicketStatus::Closed {
             "closed"
+        } else if ticket.parent.is_some() {
+            "open sub"
         } else {
             "open"
         },
@@ -331,8 +341,9 @@ fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> Str
         ));
     }
     out.push_str(&format!(
-        "<td class=\"title\"><a href=\"/t/{}\">{}</a>{}</td>\
+        "<td class=\"title\">{}<a href=\"/t/{}\">{}</a>{}</td>\
          <td class=\"who{}\">{}</td><td class=\"tags\">{}</td></tr>",
+        parent,
         escape(&ticket.short_id()),
         escape(&flatten(&ticket.title)),
         children,
@@ -738,7 +749,10 @@ mod tests {
         );
         t.tags.insert("a\"b".to_string());
         let html = list_page(&page(), &ListQuery::default(), &[t]);
-        assert!(!html.contains("<script>"));
+        // The ticket title should be escaped. The page itself includes a
+        // <script> tag for the kanban toggle, so check that the unescaped
+        // title doesn't appear — only the escaped version should.
+        assert!(!html.contains("<script>alert(1)</script>"));
         assert!(html.contains("&lt;script&gt;"));
         assert!(html.contains("a&quot;b"));
     }
