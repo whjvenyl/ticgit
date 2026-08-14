@@ -120,6 +120,17 @@ ti sync
 
 `ti sync` performs a pull followed by a push through `git-meta`.
 
+## Reset
+
+Delete every ticket, writeup, view, and user mapping and start fresh:
+
+```sh
+ti reset
+ti reset --yes   # skip the confirmation prompt
+```
+
+This cannot be undone. The schema-version key is re-seeded so the store is ready for new tickets immediately.
+
 ## What TicGit Stores
 
 All TicGit data is written on the git-meta `project` target under the `ticgit:` namespace:

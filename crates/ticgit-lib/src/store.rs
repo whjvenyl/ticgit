@@ -453,6 +453,30 @@ impl TicketStore {
         Ok(())
     }
 
+    /// Wipe every ticgit-managed key (tickets, writeups, views, users,
+    /// owners) and re-seed the schema-version marker.
+    ///
+    /// This is the nuclear option: after `reset()` the store is empty
+    /// and ready to start fresh. The schema-version key is re-written so
+    /// downstream code that checks for it still sees a valid store.
+    pub fn reset(&self) -> Result<()> {
+        let p = self.project_handle();
+
+        // Remove every key under the top-level ticgit namespace. This
+        // covers tickets, writeups, views, users, owners, and any other
+        // namespaced data we add in the future.
+        let prefix = keys::NS.to_string();
+        for (key, _) in p.get_all_values(Some(&prefix))? {
+            p.remove(&key)?;
+        }
+
+        // Re-seed the schema-version so the store looks freshly
+        // initialised rather than uninitialised.
+        p.set(keys::SCHEMA_VERSION_KEY, keys::SCHEMA_VERSION)?;
+
+        Ok(())
+    }
+
     /// Add a dependency: `id` depends on `dependency_id`.
     /// The dependency ticket must exist. Circular dependencies are rejected.
     pub fn add_dependency(&self, id: &Uuid, dependency_id: &Uuid) -> Result<()> {
@@ -1766,5 +1790,19 @@ mod tests {
         assert!(store.load(&parent.id).is_err());
         let child = store.load(&child.id).unwrap();
         assert_eq!(child.parent, None);
+    }
+
+    #[test]
+    fn reset_wipes_all_tickets_and_leaves_store_empty() {
+        let (store, _td) = test_store();
+        store.create("first", NewTicketOpts::default()).unwrap();
+        store.create("second", NewTicketOpts::default()).unwrap();
+
+        assert_eq!(store.list().unwrap().len(), 2);
+
+        store.reset().unwrap();
+
+        assert!(store.list().unwrap().is_empty());
+        assert_eq!(store.schema_version().unwrap().as_deref(), Some("1"));
     }
 }

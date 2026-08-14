@@ -123,6 +123,13 @@ Sync ticket metadata when collaborating:
 ti sync
 ```
 
+Wipe all tickets and start fresh (destructive, irreversible):
+
+```sh
+ti reset
+ti reset --yes   # skip confirmation
+```
+
 ## Code Reviews
 
 Open a review when a branch is ready for review. Link it to the ticket so the

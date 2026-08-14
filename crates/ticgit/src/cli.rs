@@ -64,6 +64,7 @@ use crate::commands;
   init       Initialise ticgit on the current repo
   setup      Configure git-meta remote from .git-meta
   update     Update ti to the latest release
+  reset      Delete all tickets and start fresh
 
 \x1b[1;36mAgents:\x1b[0m
   agent      Markdown guide for AI agents
@@ -231,6 +232,9 @@ pub enum Command {
 
     /// Update ti to the latest release.
     Update(commands::update::Args),
+
+    /// Delete all tickets, writeups, and views — start fresh.
+    Reset(commands::reset::Args),
 }
 
 pub fn run(cli: Cli) -> anyhow::Result<()> {
@@ -288,5 +292,6 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
         Some(Command::Pull(args)) => commands::pull::run(args),
         Some(Command::Push(args)) => commands::push::run(args),
         Some(Command::Update(args)) => commands::update::run(args),
+        Some(Command::Reset(args)) => commands::reset::run(args),
     }
 }

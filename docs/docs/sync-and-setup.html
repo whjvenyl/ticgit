@@ -36,7 +36,7 @@
         </header>
 
         <h1>Sync and Setup</h1>
-        <p>Commands: <code>ti sync</code>, <code>ti pull</code>, <code>ti init</code>, <code>ti setup</code>, <code>ti update</code></p>
+        <p>Commands: <code>ti sync</code>, <code>ti pull</code>, <code>ti init</code>, <code>ti setup</code>, <code>ti update</code>, <code>ti reset</code></p>
 
         <h2>How TicGit stores data</h2>
         <p>TicGit stores tickets as <a href="https://git-meta.com">git-meta</a> metadata, which lives in a separate Git ref (<code>refs/meta/main</code>). This means:</p>
@@ -161,6 +161,41 @@
             <div class="line dim">Check for updates without installing.</div>
           </div>
         </div>
+
+        <h2>ti reset</h2>
+        <p>Delete every ticket, writeup, view, and user mapping in the store and start fresh. This is the nuclear option &mdash; it cannot be undone.</p>
+
+        <div class="terminal dark">
+          <div class="term-header"><span>RESET</span></div>
+          <div class="term-body">
+            <div class="line"><span class="prompt">$</span> ti reset</div>
+            <div class="line dim">This will permanently delete all 20 ticket(s) and every writeup, view, and user mapping in this repository's ticgit store.</div>
+            <div class="line dim">Type 'yes' to confirm: yes</div>
+            <div class="line ok">Reset complete &mdash; ticgit store is now empty.</div>
+          </div>
+        </div>
+
+        <p>Skip the confirmation prompt with <code>--yes</code> (useful in scripts):</p>
+
+        <div class="terminal">
+          <div class="term-header"><span>RESET (NO PROMPT)</span></div>
+          <div class="term-body">
+            <div class="line"><span class="prompt">$</span> ti reset --yes</div>
+            <div class="line ok">Reset complete &mdash; ticgit store is now empty.</div>
+          </div>
+        </div>
+
+        <p>If the store is already empty, <code>ti reset</code> is a no-op:</p>
+
+        <div class="terminal">
+          <div class="term-header"><span>RESET (EMPTY)</span></div>
+          <div class="term-body">
+            <div class="line"><span class="prompt">$</span> ti reset</div>
+            <div class="line dim">Store is already empty &mdash; nothing to reset.</div>
+          </div>
+        </div>
+
+        <p>After a reset, the schema-version key is re-seeded so the store is ready for new tickets immediately. The checked-out ticket (if any) is cleared from session state.</p>
 
         <h2>Team workflow</h2>
         <p>A typical team setup:</p>

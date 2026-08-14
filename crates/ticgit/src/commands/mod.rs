@@ -23,6 +23,7 @@ pub mod priority;
 pub mod pull;
 pub mod push;
 pub mod recent;
+pub mod reset;
 pub mod review;
 pub mod serve;
 pub mod setup;
