@@ -309,6 +309,7 @@ fn list_page(page: &Page, query: &ListQuery, tickets: &[Ticket]) -> String {
                 show_state,
                 &children_of,
                 &present,
+                0,
             ));
         }
         body.push_str("</tbody></table>");
@@ -330,6 +331,7 @@ fn row(
     show_state: bool,
     children_of: Option<&std::collections::HashMap<uuid::Uuid, Vec<&Ticket>>>,
     is_child: bool,
+    depth: usize,
 ) -> String {
     let assigned = ticket
         .assigned
@@ -372,12 +374,17 @@ fn row(
     } else {
         String::new()
     };
-    let hidden_attr = if is_child { " style=\"display:none\"" } else { "" };
+    let hidden_attr = if is_child {
+        format!(" style=\"display:none;--depth:{}\"", depth)
+    } else {
+        format!(" style=\"--depth:{}\"", depth)
+    };
     let mut out = format!(
-        "<tr class=\"{}\" data-id=\"{}\"{}{}><td class=\"id\"><a href=\"/t/{}\">{}</a></td>\
+        "<tr class=\"{}\" data-id=\"{}\" data-depth=\"{}\"{}{}><td class=\"id\"><a href=\"/t/{}\">{}</a></td>\
          <td class=\"age\">{}</td><td class=\"prio\">{}</td>",
         tr_class,
         escape(&ticket.id.to_string()),
+        depth,
         data_parent,
         hidden_attr,
         escape(&ticket.short_id()),
@@ -417,12 +424,13 @@ fn row_tree(
     show_state: bool,
     children_of: &std::collections::HashMap<uuid::Uuid, Vec<&Ticket>>,
     present: &std::collections::HashSet<uuid::Uuid>,
+    depth: usize,
 ) -> String {
     let is_child = ticket.parent.is_some() && present.contains(&ticket.parent.unwrap());
-    let mut out = row(page, query, ticket, show_state, Some(children_of), is_child);
+    let mut out = row(page, query, ticket, show_state, Some(children_of), is_child, depth);
     if let Some(children) = children_of.get(&ticket.id) {
         for child in children {
-            out.push_str(&row_tree(page, query, child, show_state, children_of, present));
+            out.push_str(&row_tree(page, query, child, show_state, children_of, present, depth + 1));
         }
     }
     out
