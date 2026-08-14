@@ -341,7 +341,7 @@ td.prio{color:#a855f7}td.age,td.prio,td.id{white-space:nowrap}\
 td.title a{font-weight:500}\
 tr.closed td.title a{color:var(--dim);text-decoration:line-through}\
 td.who{color:var(--dim);white-space:nowrap}td.who.mine{color:#d97706;font-weight:600}\
-.children{color:var(--dim)}.parent{color:var(--dim);font-size:12px;margin-right:4px}tr.sub td.title{padding-left:20px}\
+.children{color:var(--dim)}.children-toggle{background:none;border:none;color:var(--dim);font:inherit;font-size:12px;cursor:pointer;padding:0 2px}.children-toggle:hover{color:var(--accent)}tr.sub td.title{padding-left:28px}tr.sub{background:var(--hover)}.parent{color:var(--dim);font-size:12px;margin-right:4px}\
 .tag{font-size:12px;border-radius:4px;padding:1px 6px;background:var(--chip);white-space:nowrap}\
 .tag-0{color:#2563eb}.tag-1{color:#0891b2}.tag-2{color:#16a34a}.tag-3{color:#ca8a04}\
 .tag-4{color:#c026d3}.tag-5{color:#0ea5e9}.tag-6{color:#65a30d}.tag-7{color:#e11d48}\
@@ -364,6 +364,12 @@ function kanbanToggle(b){{var g=b.closest('.kgroup');var c=g.querySelector('.kch
 var x=b.getAttribute('aria-expanded')==='true';\
 c.style.display=x?'none':'flex';b.setAttribute('aria-expanded',x?'false':'true');\
 b.innerHTML=(x?'\\u25B6':'\\u25BC')+'<span class=\"kcount\">'+c.children.length+'</span>';}}\
+function listToggle(b){{var tr=b.closest('tr');var pid=tr.getAttribute('data-id');\
+var x=b.getAttribute('aria-expanded')==='true';\
+var rows=tr.closest('tbody').querySelectorAll('tr[data-parent=\"'+pid+'\"]');\
+for(var i=0;i<rows.length;i++){{rows[i].style.display=x?'none':'table-row';}}\
+b.setAttribute('aria-expanded',x?'false':'true');\
+b.textContent=(x?'[+':'[-')+rows.length+']';}}\
 </script>";
 
 fn escape(value: &str) -> String {

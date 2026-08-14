@@ -47,7 +47,11 @@ impl View {
 pub(super) fn list_response(request: &Request) -> Result<Response> {
     let store = open_store()?;
     let query = ListQuery::from_request(request);
-    let tickets = ticgit_lib::query::apply(store.list()?, &query.filter()?);
+    // The list view groups subissues under their parent, so always
+    // include them regardless of the default hide behavior.
+    let mut filter = query.filter()?;
+    filter.hide_subissues = false;
+    let tickets = ticgit_lib::query::apply(store.list()?, &filter);
     let page = Page::new(&store)?;
     Ok(Response::html(200, list_page(&page, &query, &tickets)))
 }
@@ -275,8 +279,37 @@ fn list_page(page: &Page, query: &ListQuery, tickets: &[Ticket]) -> String {
         ));
         body.push_str("</tr></thead><tbody>");
 
+        // Build a parent-id -> children map for tickets in this view.
+        // Children are grouped under their parent's row as indented
+        // sub-rows, so we skip them when iterating the flat list.
+        let present: std::collections::HashSet<uuid::Uuid> =
+            tickets.iter().map(|t| t.id).collect();
+        let mut children_of: std::collections::HashMap<uuid::Uuid, Vec<&Ticket>> =
+            std::collections::HashMap::new();
+        for t in tickets {
+            if let Some(pid) = t.parent {
+                children_of.entry(pid).or_default().push(t);
+            }
+        }
+
         for ticket in tickets {
-            body.push_str(&row(page, query, ticket, show_state));
+            // Skip subissues whose parent is in this view — they're
+            // rendered as nested rows under the parent.
+            if let Some(pid) = ticket.parent {
+                if present.contains(&pid) {
+                    continue;
+                }
+            }
+            // Render the ticket row and its descendants recursively.
+            // Children are wrapped in a collapsible <tbody> group.
+            body.push_str(&row_tree(
+                page,
+                query,
+                ticket,
+                show_state,
+                &children_of,
+                &present,
+            ));
         }
         body.push_str("</tbody></table>");
     }
@@ -290,7 +323,14 @@ fn list_page(page: &Page, query: &ListQuery, tickets: &[Ticket]) -> String {
     document(&format!("{} tickets", page.repo), &body)
 }
 
-fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> String {
+fn row(
+    page: &Page,
+    query: &ListQuery,
+    ticket: &Ticket,
+    show_state: bool,
+    children_of: Option<&std::collections::HashMap<uuid::Uuid, Vec<&Ticket>>>,
+    is_child: bool,
+) -> String {
     let assigned = ticket
         .assigned
         .as_deref()
@@ -301,13 +341,15 @@ fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> Str
         .priority
         .map(|priority| format!("p{priority}"))
         .unwrap_or_default();
-    let children = if ticket.children.is_empty() {
-        String::new()
-    } else {
+    let has_children = children_of.map(|m| m.contains_key(&ticket.id)).unwrap_or(false);
+    let children = if has_children {
+        let n = children_of.unwrap().get(&ticket.id).unwrap().len();
         format!(
-            " <span class=\"children\">[+{}]</span>",
-            ticket.children.len()
+            " <button class=\"children-toggle\" onclick=\"listToggle(this)\"              aria-expanded=\"false\">[+{}]</button>",
+            n
         )
+    } else {
+        String::new()
     };
     let parent = if let Some(pid) = ticket.parent {
         format!(
@@ -318,16 +360,26 @@ fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> Str
         String::new()
     };
 
+    let tr_class = if ticket.status == TicketStatus::Closed {
+        "closed"
+    } else if is_child {
+        "open sub"
+    } else {
+        "open"
+    };
+    let data_parent = if let Some(pid) = ticket.parent {
+        format!(" data-parent=\"{}\"", escape(&pid.to_string()))
+    } else {
+        String::new()
+    };
+    let hidden_attr = if is_child { " style=\"display:none\"" } else { "" };
     let mut out = format!(
-        "<tr class=\"{}\"><td class=\"id\"><a href=\"/t/{}\">{}</a></td>\
+        "<tr class=\"{}\" data-id=\"{}\"{}{}><td class=\"id\"><a href=\"/t/{}\">{}</a></td>\
          <td class=\"age\">{}</td><td class=\"prio\">{}</td>",
-        if ticket.status == TicketStatus::Closed {
-            "closed"
-        } else if ticket.parent.is_some() {
-            "open sub"
-        } else {
-            "open"
-        },
+        tr_class,
+        escape(&ticket.id.to_string()),
+        data_parent,
+        hidden_attr,
         escape(&ticket.short_id()),
         escape(&ticket.short_id()),
         escape(&relative_time(ticket.created_at, page.now)),
@@ -351,6 +403,28 @@ fn row(page: &Page, query: &ListQuery, ticket: &Ticket, show_state: bool) -> Str
         escape(&assigned),
         tag_chips(query, ticket),
     ));
+    out
+}
+
+/// Recursively render a ticket row and its children. Child rows
+/// carry a `data-parent` attribute and are hidden by default; the
+/// `listToggle` JS shows/hides direct children by matching the
+/// parent row's `data-id`.
+fn row_tree(
+    page: &Page,
+    query: &ListQuery,
+    ticket: &Ticket,
+    show_state: bool,
+    children_of: &std::collections::HashMap<uuid::Uuid, Vec<&Ticket>>,
+    present: &std::collections::HashSet<uuid::Uuid>,
+) -> String {
+    let is_child = ticket.parent.is_some() && present.contains(&ticket.parent.unwrap());
+    let mut out = row(page, query, ticket, show_state, Some(children_of), is_child);
+    if let Some(children) = children_of.get(&ticket.id) {
+        for child in children {
+            out.push_str(&row_tree(page, query, child, show_state, children_of, present));
+        }
+    }
     out
 }
 
