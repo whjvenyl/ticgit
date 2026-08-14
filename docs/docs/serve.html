@@ -75,7 +75,7 @@
         <p>The web view has three modes, switchable from the nav bar. All views share the same filters (status, state, tags, assigned, search), so you can narrow to e.g. <code>?tag=bug</code> and see only bug tickets in any view.</p>
 
         <h3>List</h3>
-        <p>The default view at <code>/</code>. A sortable table of tickets showing id, age, priority, state, title, assignee, and tags. Click a ticket to see its detail page at <code>/t/&lt;id&gt;</code>.</p>
+        <p>The default view at <code>/</code>. A sortable table of tickets showing id, age, priority, state, title, assignee, and tags. Subissues are grouped under their parent with an expandable <code>[+N]</code> toggle and indented rows. Click a ticket to see its detail page at <code>/t/&lt;id&gt;</code>.</p>
 
         <div class="terminal dark">
           <div class="term-header"><span>LIST VIEW</span></div>
@@ -102,7 +102,7 @@
           </div>
         </div>
 
-        <p>Each card shows the ticket id, title, priority, assignee, and tags. Click a card to open the detail page. Empty closed-state columns (resolved, wontfix, etc.) are hidden to reduce clutter; they appear when closed tickets match the active filter.</p>
+        <p>Each card shows the ticket id, title, priority, assignee, and tags. Subissues are nested under their parent card with an expandable <code>[+N]</code> toggle. Click a card to open the detail page. Empty closed-state columns (resolved, wontfix, etc.) are hidden to reduce clutter; they appear when closed tickets match the active filter.</p>
 
         <h3>Flow</h3>
         <p>A dependency graph view at <code>/flow</code>. Tickets appear as nodes and their relationships as edges, rendered with <a href="https://xyflow.com/">React Flow</a> loaded from a CDN (no build step required).</p>
@@ -139,7 +139,8 @@
           </div>
         </div>
 
-        <p>Supported params: <code>status</code>, <code>state</code>, <code>tag</code> (repeatable), <code>assigned</code>, <code>q</code> (search), <code>order</code>, <code>all</code>, <code>subissues</code>.</p>
+        <p>Supported params: <code>status</code>, <code>state</code>, <code>tag</code> (repeatable), <code>assigned</code>, <code>q</code> (search), <code>order</code>, <code>all</code>.</p>
+        <p>Subissues are always included in all web views and the JSON API. In the list and kanban views, subissues are grouped under their parent with an expandable <code>[+N]</code> toggle.</p>
 
         <h2>JSON API</h2>
         <p><code>/tickets.json</code> returns the filtered ticket list as a JSON array, accepting the same query params:</p>

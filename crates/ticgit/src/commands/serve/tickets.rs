@@ -59,7 +59,11 @@ pub(super) fn list_response(request: &Request) -> Result<Response> {
 pub(super) fn json_response(request: &Request) -> Result<Response> {
     let store = open_store()?;
     let query = ListQuery::from_request(request);
-    let tickets = ticgit_lib::query::apply(store.list()?, &query.filter()?);
+    // Match the HTML list view: always include subissues so the JSON
+    // endpoint returns the same set of tickets the page renders.
+    let mut filter = query.filter()?;
+    filter.hide_subissues = false;
+    let tickets = ticgit_lib::query::apply(store.list()?, &filter);
     Ok(Response::new(
         200,
         "application/json; charset=utf-8",
