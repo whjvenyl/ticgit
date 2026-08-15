@@ -580,7 +580,7 @@ fn detail_page(page: &Page, ticket: &Ticket) -> String {
         "<header class=\"detail\"><a class=\"back\" href=\"/\">\u{2190} all tickets</a>\
          <h1>{}</h1><p class=\"subtitle\"><span class=\"badge state-{}\">{}</span> \
          <code>{}</code> \u{b7} opened {} ago by {}</p>\
-         <nav class=\"detail-nav\"><a href=\"/t/{}\">Ticket</a>\
+         <nav class=\"detail-nav\"><a href=\"/t/{}\" class=\"active\">Ticket</a>\
          <a href=\"/t/{}/flow\">Lifecycle</a></nav></header>",
         escape(&ticket.title),
         escape(ticket.state.as_str()),
