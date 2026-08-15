@@ -244,46 +244,41 @@ fn build_nodes_json(lifecycle: &Lifecycle) -> String {
                 ""
             };
 
-            let count_badge = if count > 1 {
-                format!("<span class=\"lnode-count\">\u{00d7}{}</span>", count)
-            } else {
-                String::new()
-            };
+            let current_class = if is_current { " current" } else { "" };
 
-            let meta = if let Some(fv) = first_visit {
+            // Node label and meta are separate data fields so the custom
+            // StateNode component can render them with distinct styling.
+            let label = if count > 1 {
+                format!("{}{icon} \u{00d7}{count}", state.as_str())
+            } else {
+                format!("{}{icon}", state.as_str())
+            };
+            let meta_str = if let Some(fv) = first_visit {
                 if is_current {
-                    format!(
-                        "<div class=\"lnode-meta\">current \u{b7} {}</div>",
-                        escape(&duration_str(fv.duration))
-                    )
+                    format!("current \u{b7} {}", duration_str(fv.duration))
                 } else {
-                    format!(
-                        "<div class=\"lnode-meta\">{}</div>",
-                        escape(&duration_str(fv.duration))
-                    )
+                    duration_str(fv.duration)
                 }
             } else {
                 String::new()
             };
 
-            let current_class = if is_current { " current" } else { "" };
+            let class = format!("lnode state-{}{current_class}", state.as_str());
 
-            let label = format!(
-                "<div class=\"lnode{}\"><span class=\"lnode-state state-{}\">{}{}</span>{}{}</div>",
-                current_class,
-                escape(state.as_str()),
-                escape(state.as_str()),
-                icon,
-                count_badge,
-                meta,
-            );
+            let meta_json = if meta_str.is_empty() {
+                "null".to_string()
+            } else {
+                serde_json::to_string(&meta_str).unwrap_or_else(|_| "null".to_string())
+            };
 
             format!(
-                "{{\"id\":\"{}\",\"data\":{{\"label\":{}}},\"position\":{{\"x\":{},\"y\":{}}},\"type\":\"default\",\"draggable\":false}}",
+                "{{\"id\":\"{}\",\"data\":{{\"label\":{},\"meta\":{}}},\"position\":{{\"x\":{},\"y\":{}}},\"className\":\"{}\"}}",
                 escape(state.as_str()),
                 serde_json::to_string(&label).unwrap_or_else(|_| "\"\"".to_string()),
+                meta_json,
                 x,
                 y,
+                escape(&class),
             )
         })
         .collect();
@@ -320,19 +315,13 @@ fn build_edges_json(lifecycle: &Lifecycle) -> String {
 
         let label = format!("#{} \u{b7} {}", transition_num, dur);
 
-        let style = if is_back_edge {
-            ",\"style\":{\"strokeDasharray\":\"6 4\",\"stroke\":\"#dc2626\"}"
-        } else {
-            ""
-        };
-
         edges.push(format!(
-            "{{\"id\":\"e-{}\",\"source\":\"{}\",\"target\":\"{}\",\"type\":\"smoothstep\",\"animated\":false,\"label\":{}{}}}",
+            "{{\"id\":\"e-{}\",\"source\":\"{}\",\"target\":\"{}\",\"data\":{{\"label\":{},\"back\":{}}}}}",
             transition_num,
             escape(from.state.as_str()),
             escape(to.state.as_str()),
             serde_json::to_string(&label).unwrap_or_else(|_| "\"\"".to_string()),
-            style,
+            is_back_edge,
         ));
     }
 
@@ -477,29 +466,49 @@ fn bootstrap_script(nodes: &str, edges: &str) -> String {
         r#"(function() {{
 var React = window.React;
 var ReactDOM = window.ReactDOM;
-var ReactFlow = window.ReactFlow;
+var RF = window.ReactFlow;
+var h = React.createElement;
 
+// --- Custom node with explicit Handles (so edges can connect) ---
+function StateNode(props) {{
+  return h('div', {{ className: 'lnode-inner' }},
+    h(RF.Handle, {{ type: 'target', position: RF.Position.Left, style: {{ opacity: 0 }} }}),
+    h('div', {{ className: 'lnode-label' }}, props.data.label),
+    props.data.meta ? h('div', {{ className: 'lnode-meta' }}, props.data.meta) : null,
+    h(RF.Handle, {{ type: 'source', position: RF.Position.Right, style: {{ opacity: 0 }} }})
+  );
+}}
+var nodeTypes = {{ stateNode: StateNode }};
+
+// Use built-in smoothstep edges — no custom edge type needed.
 var nodes = [{nodes}].map(function(n) {{
-  return Object.assign({{}}, n, {{ style: {{ width: 180 }} }});
+  return Object.assign({{}}, n, {{ type: 'stateNode' }});
 }});
+
 var edges = [{edges}].map(function(e) {{
+  var isBack = e.data && e.data.back;
   return Object.assign({{}}, e, {{
-    markerEnd: {{ type: ReactFlow.MarkerType.ArrowClosed }},
-    labelStyle: {{ fontSize: 11, fontFamily: 'ui-monospace, monospace' }},
-    labelBgStyle: {{ fill: 'var(--chip)' }},
+    type: 'smoothstep',
+    label: e.data && e.data.label,
+    labelStyle: {{ fontSize: 11, fontFamily: 'ui-monospace, monospace', fill: isBack ? '#dc2626' : 'inherit' }},
+    labelBgStyle: {{ fill: 'var(--chip)', opacity: 0.9 }},
     labelBgPadding: [4, 2],
     labelBgBorderRadius: 4,
+    markerEnd: {{ type: RF.MarkerType.ArrowClosed, color: isBack ? '#dc2626' : '#b1b1b7' }},
+    style: isBack
+      ? {{ strokeDasharray: '6 4', stroke: '#dc2626' }}
+      : {{ stroke: '#b1b1b7' }},
   }});
 }});
 
-// Detect dark mode and add the class React Flow expects.
 var flowEl = document.getElementById('flow');
 var isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 
 function Flow() {{
-  return React.createElement(ReactFlow.ReactFlow, {{
-    nodes: nodes,
-    edges: edges,
+  return h(RF.ReactFlow, {{
+    defaultNodes: nodes,
+    defaultEdges: edges,
+    nodeTypes: nodeTypes,
     fitView: true,
     fitViewOptions: {{ padding: 0.3 }},
     nodesDraggable: true,
@@ -511,12 +520,17 @@ function Flow() {{
     maxZoom: 2,
     className: isDark ? 'dark' : '',
   }},
-    React.createElement(ReactFlow.Background, {{ variant: 'dots', gap: 16, size: 1 }}),
-    React.createElement(ReactFlow.Controls, {{ showInteractive: false }})
+    h(RF.Background, {{ variant: 'dots', gap: 16, size: 1 }}),
+    h(RF.Controls, {{ showInteractive: false }})
   );
 }}
 
-ReactDOM.createRoot(flowEl).render(React.createElement(Flow));
+try {{
+  ReactDOM.createRoot(flowEl).render(h(Flow));
+}} catch(err) {{
+  flowEl.innerHTML = '<pre style="padding:12px;color:#dc2626;font:12px monospace">Flow render error: ' + (err && err.message ? err.message : String(err)) + '\\n' + (err && err.stack ? err.stack : '') + '</pre>';
+  console.error('Flow render error:', err);
+}}
 }})();
 "#
     )
@@ -524,11 +538,24 @@ ReactDOM.createRoot(flowEl).render(React.createElement(Flow));
 
 const LIFECYCLE_STYLE: &str = "\
 .flow-wrap{width:100%;height:380px;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:24px}\
-.lnode{width:160px;padding:8px;text-align:center}\
-.lnode-state{display:inline-block;font-size:12px;font-weight:600;border-radius:4px;padding:2px 8px;background:var(--chip)}\
-.lnode-count{font-size:11px;color:var(--dim);margin-left:4px}\
-.lnode-meta{font-size:10px;color:var(--dim);margin-top:4px}\
-.lnode.current .lnode-state{box-shadow:0 0 0 2px var(--accent)}\
+.react-flow__node.lnode{border-radius:6px;border:2px solid var(--line);background:var(--bg);padding:8px 12px;min-width:120px;text-align:center;font:12px ui-monospace,monospace}\
+.react-flow__node.lnode.state-new{border-color:#3b82f6}\
+.react-flow__node.lnode.state-assigned{border-color:#8b5cf6}\
+.react-flow__node.lnode.state-in-progress{border-color:#f59e0b}\
+.react-flow__node.lnode.state-blocked{border-color:#ef4444}\
+.react-flow__node.lnode.state-review{border-color:#10b981}\
+.react-flow__node.lnode.state-resolved{border-color:#22c55e}\
+.react-flow__node.lnode.state-wontfix{border-color:#6b7280}\
+.react-flow__node.lnode.state-duplicate{border-color:#6b7280}\
+.react-flow__node.lnode.state-invalid{border-color:#6b7280}\
+.react-flow__node.lnode.current{box-shadow:0 0 0 3px var(--accent)}\
+.lnode-inner{position:relative}\
+.lnode-label{font-weight:600}\
+.lnode-meta{font-size:10px;color:var(--dim);margin-top:2px}\
+.react-flow__edge-text{fill:var(--fg) !important}\
+.react-flow__edge-textbg{fill:var(--chip) !important}\
+.ledge-label{font:11px ui-monospace,monospace;background:var(--chip);color:var(--fg);padding:2px 6px;border-radius:4px;border:1px solid var(--line)}\
+.ledge-label.ledge-back{color:#dc2626;border-color:#dc2626}\
 .lifecycle-timeline{margin-top:8px}\
 .lvisit{margin-bottom:12px;border:1px solid var(--line);border-radius:6px;overflow:hidden}\
 .lvisit-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--chip);font-size:13px}\
@@ -649,9 +676,9 @@ mod tests {
         assert_eq!(lc.visits.len(), 5);
         let edges = build_edges_json(&lc);
         // The edge from review→in-progress (transition #3) should be a
-        // back-edge (dashed, red).
+        // back-edge (dashed, red) — marked with "back":true in the data.
         assert!(edges.contains("e-3"));
-        assert!(edges.contains("strokeDasharray"));
+        assert!(edges.contains("\"back\":true"));
     }
 
     #[test]
