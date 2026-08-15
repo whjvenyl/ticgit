@@ -194,8 +194,9 @@ fn flow_page(page: &Page, ticket: &Ticket, lifecycle: &Lifecycle) -> String {
     )
 }
 
-/// Build React Flow nodes — one per unique state, positioned left-to-right
-/// by first-visit order.
+/// Build React Flow nodes — one per unique state, positioned in a zigzag
+/// layout (alternating Y) so edges have vertical room to route without
+/// overlapping.
 fn build_nodes_json(lifecycle: &Lifecycle) -> String {
     // Unique states in order of first appearance.
     let mut unique: Vec<TicketState> = Vec::new();
@@ -211,6 +212,14 @@ fn build_nodes_json(lifecycle: &Lifecycle) -> String {
         *counts.entry(visit.state).or_default() += 1;
     }
 
+    // Self-loop count per state (transitions where from == to).
+    let mut self_loops: HashMap<TicketState, usize> = HashMap::new();
+    for i in 0..lifecycle.visits.len().saturating_sub(1) {
+        if lifecycle.visits[i].state == lifecycle.visits[i + 1].state {
+            *self_loops.entry(lifecycle.visits[i].state).or_default() += 1;
+        }
+    }
+
     // First visit per state (for the "first seen" label).
     let mut first: HashMap<TicketState, &StateVisit> = HashMap::new();
     for visit in &lifecycle.visits {
@@ -220,17 +229,20 @@ fn build_nodes_json(lifecycle: &Lifecycle) -> String {
     // The last visit's state is "current".
     let current_state = lifecycle.visits.last().map(|v| v.state);
 
-    const COL_WIDTH: f64 = 220.0;
+    const COL_WIDTH: f64 = 240.0;
     const X_OFFSET: f64 = 40.0;
-    const Y_OFFSET: f64 = 40.0;
+    const Y_TOP: f64 = 40.0;
+    const Y_BOTTOM: f64 = 200.0;
 
     let nodes: Vec<String> = unique
         .iter()
         .enumerate()
         .map(|(col, &state)| {
             let x = X_OFFSET + col as f64 * COL_WIDTH;
-            let y = Y_OFFSET;
+            // Zigzag: even columns on top, odd on bottom.
+            let y = if col % 2 == 0 { Y_TOP } else { Y_BOTTOM };
             let count = counts.get(&state).copied().unwrap_or(1);
+            let loops = self_loops.get(&state).copied().unwrap_or(0);
             let first_visit = first.get(&state).copied();
             let is_current = current_state == Some(state);
             let is_closed = state.status() == ticgit_lib::TicketStatus::Closed;
@@ -253,15 +265,20 @@ fn build_nodes_json(lifecycle: &Lifecycle) -> String {
             } else {
                 format!("{}{icon}", state.as_str())
             };
-            let meta_str = if let Some(fv) = first_visit {
+
+            // Meta line: duration, current marker, and self-loop badge.
+            let mut meta_parts: Vec<String> = Vec::new();
+            if let Some(fv) = first_visit {
                 if is_current {
-                    format!("current \u{b7} {}", duration_str(fv.duration))
+                    meta_parts.push(format!("current \u{b7} {}", duration_str(fv.duration)));
                 } else {
-                    duration_str(fv.duration)
+                    meta_parts.push(duration_str(fv.duration));
                 }
-            } else {
-                String::new()
-            };
+            }
+            if loops > 0 {
+                meta_parts.push(format!("\u{21bb}{}", loops));
+            }
+            let meta_str = meta_parts.join(" \u{b7} ");
 
             let class = format!("lnode state-{}{current_class}", state.as_str());
 
@@ -286,17 +303,28 @@ fn build_nodes_json(lifecycle: &Lifecycle) -> String {
     nodes.join(",")
 }
 
-/// Build React Flow edges — one per transition between consecutive visits.
-/// Back-edges (revisiting an earlier state) are drawn with a dashed style
-/// so loops are obvious.
+/// Build React Flow edges — one per unique (source, target) state pair.
+/// Self-loops (same state → same state) are skipped here and shown as a
+/// badge on the node instead.  Multiple transitions between the same pair
+/// are merged into one edge with a combined label so the graph stays clean
+/// even when a ticket bounces repeatedly.
 fn build_edges_json(lifecycle: &Lifecycle) -> String {
-    let mut edges: Vec<String> = Vec::new();
+    // Group transitions by (from_state, to_state), preserving order.
+    // Key: (from_state, to_state) as a string for HashMap simplicity.
+    use std::collections::BTreeMap;
+
+    // (from, to) → (transition_numbers, is_back_edge, max_duration)
+    let mut groups: BTreeMap<(String, String), (Vec<usize>, bool, Duration)> = BTreeMap::new();
 
     for i in 0..lifecycle.visits.len().saturating_sub(1) {
         let from = &lifecycle.visits[i];
         let to = &lifecycle.visits[i + 1];
         let transition_num = i + 1;
-        let dur = duration_str(from.duration);
+
+        // Skip self-loops — they're rendered as node badges.
+        if from.state == to.state {
+            continue;
+        }
 
         // A back-edge is one that goes to a state whose first visit
         // was earlier than the source's first visit — i.e. the target
@@ -311,19 +339,44 @@ fn build_edges_json(lifecycle: &Lifecycle) -> String {
             .iter()
             .position(|v| v.state == to.state)
             .unwrap_or(0);
-        let is_back_edge = to_first <= from_first && from.state != to.state;
+        let is_back_edge = to_first <= from_first;
 
-        let label = format!("#{} \u{b7} {}", transition_num, dur);
-
-        edges.push(format!(
-            "{{\"id\":\"e-{}\",\"source\":\"{}\",\"target\":\"{}\",\"data\":{{\"label\":{},\"back\":{}}}}}",
-            transition_num,
-            escape(from.state.as_str()),
-            escape(to.state.as_str()),
-            serde_json::to_string(&label).unwrap_or_else(|_| "\"\"".to_string()),
-            is_back_edge,
-        ));
+        let key = (from.state.as_str().to_string(), to.state.as_str().to_string());
+        let entry = groups
+            .entry(key)
+            .or_insert_with(|| (Vec::new(), is_back_edge, Duration::ZERO));
+        entry.0.push(transition_num);
+        entry.1 = entry.1 || is_back_edge;
+        entry.2 = entry.2.max(from.duration);
     }
+
+    let edges: Vec<String> = groups
+        .iter()
+        .map(|((from_state, to_state), (nums, is_back, max_dur))| {
+            // Label: "#1" or "#1,#4" for merged edges, plus duration if > 0.
+            let nums_str = nums
+                .iter()
+                .map(|n| format!("#{}", n))
+                .collect::<Vec<_>>()
+                .join(",");
+            let label = if max_dur.whole_seconds() > 0 {
+                format!("{} \u{b7} {}", nums_str, duration_str(*max_dur))
+            } else {
+                nums_str
+            };
+
+            let edge_id = format!("e-{}", nums.iter().map(|n| n.to_string()).collect::<Vec<_>>().join("-"));
+
+            format!(
+                "{{\"id\":\"{}\",\"source\":\"{}\",\"target\":\"{}\",\"data\":{{\"label\":{},\"back\":{}}}}}",
+                escape(&edge_id),
+                escape(from_state),
+                escape(to_state),
+                serde_json::to_string(&label).unwrap_or_else(|_| "\"\"".to_string()),
+                is_back,
+            )
+        })
+        .collect();
 
     edges.join(",")
 }
@@ -481,7 +534,8 @@ function StateNode(props) {{
 }}
 var nodeTypes = {{ stateNode: StateNode }};
 
-// Use built-in smoothstep edges — no custom edge type needed.
+// Use built-in bezier edges — curves separate bidirectional pairs better
+// than orthogonal smoothstep paths.
 var nodes = [{nodes}].map(function(n) {{
   return Object.assign({{}}, n, {{ type: 'stateNode' }});
 }});
@@ -489,7 +543,7 @@ var nodes = [{nodes}].map(function(n) {{
 var edges = [{edges}].map(function(e) {{
   var isBack = e.data && e.data.back;
   return Object.assign({{}}, e, {{
-    type: 'smoothstep',
+    type: 'default',
     label: e.data && e.data.label,
     labelStyle: {{ fontSize: 11, fontFamily: 'ui-monospace, monospace', fill: isBack ? '#dc2626' : 'inherit' }},
     labelBgStyle: {{ fill: 'var(--chip)', opacity: 0.9 }},
@@ -538,7 +592,7 @@ try {{
 }
 
 const LIFECYCLE_STYLE: &str = "\
-.flow-wrap{width:100%;height:380px;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:24px}\
+.flow-wrap{width:100%;height:440px;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-bottom:24px}\
 .react-flow__node.lnode{border-radius:6px;border:2px solid var(--line);background:var(--bg);padding:8px 12px;min-width:120px;text-align:center;font:12px ui-monospace,monospace}\
 .react-flow__node.lnode.state-new{border-color:#3b82f6}\
 .react-flow__node.lnode.state-assigned{border-color:#8b5cf6}\
