@@ -388,8 +388,9 @@ fn render_step(entry: &HistoryEntry, page: &Page) -> String {
         other => other,
     };
 
-    let value = if entry.value.len() > 60 {
-        format!("{}...", &entry.value[..57])
+    let value = if entry.value.chars().count() > 60 {
+        let truncated: String = entry.value.chars().take(57).collect();
+        format!("{}...", truncated)
     } else {
         entry.value.clone()
     };

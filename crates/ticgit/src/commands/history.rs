@@ -170,8 +170,9 @@ fn print_terminal(entries: &[HistoryEntry]) {
 
         let short_email = e.email.split('@').next().unwrap_or(&e.email);
 
-        let value_display = if e.value.len() > 60 {
-            format!("{}...", &e.value[..57])
+        let value_display = if e.value.chars().count() > 60 {
+            let truncated: String = e.value.chars().take(57).collect();
+            format!("{}...", truncated)
         } else {
             e.value.clone()
         };
@@ -216,8 +217,9 @@ fn print_markdown(ticket_id: &str, entries: &[HistoryEntry]) {
             e.at.hour(),
             e.at.minute()
         );
-        let value_display = if e.value.len() > 50 {
-            format!("{}...", &e.value[..47])
+        let value_display = if e.value.chars().count() > 50 {
+            let truncated: String = e.value.chars().take(47).collect();
+            format!("{}...", truncated)
         } else {
             e.value.clone()
         };
