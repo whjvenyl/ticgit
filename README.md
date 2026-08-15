@@ -104,7 +104,7 @@ available at [`https://ticgit.dev/schema/v1.json`](https://ticgit.dev/schema/v1.
 `--porcelain` and `--format json` are not supported compatibility aliases today;
 use `--json` for schema-stable output.
 
-Agents can run `ti help --agent` for a Markdown guide, or read the website's
+Agents can run `ti agent` for a Markdown guide, or read the website's
 Markdown version at [`docs/index.md`](docs/index.md).
 
 Select a current ticket:
@@ -153,13 +153,14 @@ ti import gh
 ti import gh --repo owner/repo
 ```
 
-Saved views are named snapshots of ticket UUIDs:
+Saved views are named snapshots of list filters. Run `ti list` with the
+filters you want, then save them:
 
 ```sh
-ti save-view bugs --tag bug
+ti list --tag bug
+ti views save bugs
 ti views
-ti views bugs
-ti list --view bugs
+ti list bugs
 ```
 
 ## Web View

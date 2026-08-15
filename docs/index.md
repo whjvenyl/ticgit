@@ -105,7 +105,7 @@ The stable machine-output schema is published at [`schema/v1.json`](schema/v1.js
 Agents can also run:
 
 ```sh
-ti help --agent
+ti agent
 ```
 
 That prints an agent-focused Markdown guide directly from the installed CLI.
