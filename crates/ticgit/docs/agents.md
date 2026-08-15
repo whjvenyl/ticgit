@@ -141,9 +141,9 @@ ti serve --open
 
 - List (`/`) — sortable table
 - Kanban (`/kanban`) — board grouped by lifecycle state
-- Flow (`/flow`) — dependency graph (React Flow)
+- Lifecycle (`/t/<id>/flow`) — per-ticket state-transition graph showing the ticket's journey through its states over time, with a timeline of all field changes
 
-All views accept the same query filters as `ti list` (e.g. `/kanban?tag=bug`).
+The lifecycle view is linked from each ticket's detail page. All views accept the same query filters as `ti list` (e.g. `/kanban?tag=bug`).
 
 ## Code Reviews
 

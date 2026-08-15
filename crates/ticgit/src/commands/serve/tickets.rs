@@ -21,7 +21,6 @@ use crate::timefmt::relative_time;
 pub(super) enum View {
     List,
     Kanban,
-    Flow,
 }
 
 impl View {
@@ -29,7 +28,6 @@ impl View {
         match self {
             View::List => "List",
             View::Kanban => "Kanban",
-            View::Flow => "Flow",
         }
     }
 
@@ -37,7 +35,6 @@ impl View {
         match self {
             View::List => "/",
             View::Kanban => "/kanban",
-            View::Flow => "/flow",
         }
     }
 }
@@ -491,7 +488,7 @@ pub(super) fn header(page: &Page, query: &ListQuery, view: View) -> String {
         ),
     ];
     let current = query.href(None);
-    let view_modes = [View::List, View::Kanban, View::Flow];
+    let view_modes = [View::List, View::Kanban];
     let view_nav = view_modes
         .iter()
         .map(|v| {
@@ -582,13 +579,17 @@ fn detail_page(page: &Page, ticket: &Ticket) -> String {
     body.push_str(&format!(
         "<header class=\"detail\"><a class=\"back\" href=\"/\">\u{2190} all tickets</a>\
          <h1>{}</h1><p class=\"subtitle\"><span class=\"badge state-{}\">{}</span> \
-         <code>{}</code> \u{b7} opened {} ago by {}</p></header>",
+         <code>{}</code> \u{b7} opened {} ago by {}</p>\
+         <nav class=\"detail-nav\"><a href=\"/t/{}\">Ticket</a>\
+         <a href=\"/t/{}/flow\">Lifecycle</a></nav></header>",
         escape(&ticket.title),
         escape(ticket.state.as_str()),
         escape(ticket.state.as_str()),
         escape(&ticket.short_id()),
         escape(&relative_time(ticket.created_at, page.now)),
         escape(&render::display_name(&ticket.created_by, Some(&page.nicks))),
+        escape(&ticket.short_id()),
+        escape(&ticket.short_id()),
     ));
 
     let mut fields: Vec<(&str, String)> = Vec::new();

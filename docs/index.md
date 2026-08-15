@@ -123,7 +123,9 @@ Three read-only views are available:
 
 - **List** (`/`) — sortable table, same columns as `ti list`
 - **Kanban** (`/kanban`) — board grouped by lifecycle state (new, assigned, in-progress, blocked, review)
-- **Flow** (`/flow`) — dependency graph rendered with [React Flow](https://xyflow.com/), showing `depends_on` and parent/child edges
+- **Lifecycle** (`/t/<id>/flow`) — per-ticket state-transition graph rendered with [React Flow](https://xyflow.com/), showing the ticket's journey through its states over time
+
+The lifecycle view is linked from each ticket's detail page. It reconstructs the ticket's state history from the git-meta metadata log and renders one node per unique state, with edges for each transition. Loops (e.g. `review → in-progress → review`) draw as back-edges so revisited states are immediately visible. A timeline below the graph lists every field change grouped by the state window it happened in — comments, tag changes, assignment updates, etc. — with timestamps and who made each change. React, ReactDOM, and @xyflow/react are bundled locally (no CDN dependencies) and respect the system dark/light theme.
 
 All views share the same query filters (`?tag=bug`, `?state=blocked`, `?assigned=you@example.com`, etc.). A JSON API is available at `/tickets.json`.
 

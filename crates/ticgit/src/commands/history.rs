@@ -26,13 +26,13 @@ pub struct Args {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-struct HistoryEntry {
-    field: String,
-    value: String,
-    operation: String,
-    email: String,
+pub(crate) struct HistoryEntry {
+    pub field: String,
+    pub value: String,
+    pub operation: String,
+    pub email: String,
     #[serde(with = "time::serde::rfc3339")]
-    at: OffsetDateTime,
+    pub at: OffsetDateTime,
 }
 
 pub fn run(args: Args) -> Result<()> {
@@ -57,13 +57,13 @@ pub fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-fn db_path_for(git_dir: &std::path::Path) -> Result<PathBuf> {
+pub(crate) fn db_path_for(git_dir: &std::path::Path) -> Result<PathBuf> {
     let path = git_dir.join("git-meta.sqlite");
     anyhow::ensure!(path.exists(), "no git-meta database at {}", path.display());
     Ok(path)
 }
 
-fn query_history(
+pub(crate) fn query_history(
     db_path: &std::path::Path,
     ticket_id: &str,
     limit: Option<usize>,

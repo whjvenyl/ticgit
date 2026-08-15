@@ -215,11 +215,18 @@ fn route(request: &Request) -> Result<Response> {
     match request.path.as_str() {
         "/" => tickets::list_response(request),
         "/kanban" => kanban::response(request),
-        "/flow" => flow::response(request),
         "/tickets.json" => tickets::json_response(request),
         "/favicon.ico" => Ok(Response::empty(204)),
         path => {
+            // Static assets for the flow view (embedded at compile time).
+            if let Some(asset) = path.strip_prefix("/assets/") {
+                return Ok(serve_asset(asset));
+            }
             if let Some(reference) = path.strip_prefix("/t/").filter(|r| !r.is_empty()) {
+                // /t/<id>/flow → lifecycle view; everything else → detail.
+                if let Some(reference) = reference.strip_suffix("/flow") {
+                    return flow::response(request, reference);
+                }
                 return tickets::detail_response(reference);
             }
             Ok(Response::html(
@@ -357,7 +364,11 @@ dd{margin:2px 0 0}\
 h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:24px 0 8px}\
 .prose{white-space:pre-wrap;word-wrap:break-word;font:inherit;margin:0;\
 background:var(--chip);border-radius:6px;padding:12px}\
-.comment{margin-bottom:12px}.byline{color:var(--dim);font-size:12px;margin:0 0 4px}nav.modes{display:flex;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}.kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}.kanban-col{flex:0 0 240px;background:var(--chip);border-radius:8px;padding:8px;display:flex;flex-direction:column;min-height:60px}.kanban-col h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 8px;padding:2px 4px}.kanban-col h3 .n{float:right;font-weight:400}.kanban-cards{display:flex;flex-direction:column;gap:6px}.kcard{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;display:block}.kcard:hover{border-color:var(--accent);text-decoration:none}.kcard .kt{font-weight:500;font-size:13px;line-height:1.3;margin-bottom:4px}.kcard .km{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim)}.kcard .kid{font-family:inherit;color:var(--dim)}.kcard .kp{color:#a855f7}.kcard .kpar{color:var(--dim)}.kcard .ka{color:#d97706}.kcard .kp{color:var(--dim)}.kcard .kc{color:var(--dim)}.kcard-sub{border-left:3px solid var(--accent)}.kgroup{display:flex;flex-direction:column;gap:6px}.kcard-parent{border-left:3px solid var(--accent)}.ktoggle{display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--dim);font:inherit;font-size:11px;cursor:pointer;padding:2px 4px;border-radius:4px}.ktoggle:hover{background:var(--hover)}.ktoggle .kcount{background:var(--chip);border-radius:999px;padding:0 6px}.kchildren{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:2px solid var(--line);margin-left:8px}.kchildren .kcard{font-size:12px;opacity:.9}.flow-wrap{width:100%;height:calc(100vh - 120px);border:1px solid var(--line);border-radius:8px;overflow:hidden}.flow-empty{color:var(--dim);margin-top:16px}.fnode{width:200px;padding:6px 8px;font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.fnode-id{color:var(--dim);font-size:11px}.fnode-title{font-weight:500;margin:2px 0 4px}.fnode-state{font-size:10px;border-radius:3px;padding:1px 5px;background:var(--chip)}";
+.comment{margin-bottom:12px}.byline{color:var(--dim);font-size:12px;margin:0 0 4px}nav.modes{display:flex;gap:4px;margin-left:4px;padding-left:8px;border-left:1px solid var(--line)}.kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:12px}.kanban-col{flex:0 0 240px;background:var(--chip);border-radius:8px;padding:8px;display:flex;flex-direction:column;min-height:60px}.kanban-col h3{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--dim);margin:0 0 8px;padding:2px 4px}.kanban-col h3 .n{float:right;font-weight:400}.kanban-cards{display:flex;flex-direction:column;gap:6px}.kcard{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px;display:block}.kcard:hover{border-color:var(--accent);text-decoration:none}.kcard .kt{font-weight:500;font-size:13px;line-height:1.3;margin-bottom:4px}.kcard .km{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px;color:var(--dim)}.kcard .kid{font-family:inherit;color:var(--dim)}.kcard .kp{color:#a855f7}.kcard .kpar{color:var(--dim)}.kcard .ka{color:#d97706}.kcard .kp{color:var(--dim)}.kcard .kc{color:var(--dim)}.kcard-sub{border-left:3px solid var(--accent)}.kgroup{display:flex;flex-direction:column;gap:6px}.kcard-parent{border-left:3px solid var(--accent)}.ktoggle{display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--dim);font:inherit;font-size:11px;cursor:pointer;padding:2px 4px;border-radius:4px}.ktoggle:hover{background:var(--hover)}.ktoggle .kcount{background:var(--chip);border-radius:999px;padding:0 6px}.kchildren{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:2px solid var(--line);margin-left:8px}.kchildren .kcard{font-size:12px;opacity:.9}.flow-empty{color:var(--dim);margin-top:16px}\
+.detail-nav{display:flex;gap:4px;margin-top:10px}\
+.detail-nav a{padding:3px 10px;border-radius:999px;color:var(--dim);background:var(--chip)}\
+.detail-nav a:hover{background:var(--hover);text-decoration:none}\
+.detail-nav a.active{background:var(--accent);color:#fff}";
 
 const KANBAN_SCRIPT: &str = "<script>\
 function kanbanToggle(b){{var g=b.closest('.kgroup');var c=g.querySelector('.kchildren');\
@@ -389,6 +400,28 @@ fn escape(value: &str) -> String {
 
 fn flatten(value: &str) -> String {
     value.replace(['\n', '\r', '\t'], " ")
+}
+
+// -- vendor assets ---------------------------------------------------------
+
+/// Embedded vendor assets for the flow view (React, ReactDOM,
+/// @xyflow/react UMD bundles + CSS).  Served at `/assets/<name>` so
+/// the flow page has no CDN dependencies.
+static REACT_JS: &str = include_str!(env!("TICGIT_VENDOR_REACT_MIN_JS"));
+static REACT_DOM_JS: &str = include_str!(env!("TICGIT_VENDOR_REACT_DOM_MIN_JS"));
+static XYFLOW_JS: &str = include_str!(env!("TICGIT_VENDOR_XYFLOW_MIN_JS"));
+static XYFLOW_CSS: &str = include_str!(env!("TICGIT_VENDOR_XYFLOW_CSS"));
+static JSX_SHIM_JS: &str = include_str!(env!("TICGIT_VENDOR_JSX_RUNTIME_SHIM_JS"));
+
+fn serve_asset(name: &str) -> Response {
+    match name {
+        "react.min.js" => Response::new(200, "text/javascript; charset=utf-8", REACT_JS.as_bytes().to_vec()),
+        "react-dom.min.js" => Response::new(200, "text/javascript; charset=utf-8", REACT_DOM_JS.as_bytes().to_vec()),
+        "xyflow.min.js" => Response::new(200, "text/javascript; charset=utf-8", XYFLOW_JS.as_bytes().to_vec()),
+        "xyflow.css" => Response::new(200, "text/css; charset=utf-8", XYFLOW_CSS.as_bytes().to_vec()),
+        "jsx-runtime-shim.js" => Response::new(200, "text/javascript; charset=utf-8", JSX_SHIM_JS.as_bytes().to_vec()),
+        _ => Response::html(404, error_page("404 - not found", "No such asset.")),
+    }
 }
 
 // -- responses -------------------------------------------------------------

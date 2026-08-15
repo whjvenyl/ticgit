@@ -72,7 +72,7 @@
         </ul>
 
         <h2>Views</h2>
-        <p>The web view has three modes, switchable from the nav bar. All views share the same filters (status, state, tags, assigned, search), so you can narrow to e.g. <code>?tag=bug</code> and see only bug tickets in any view.</p>
+        <p>The web view has two list modes (List and Kanban), switchable from the nav bar, plus a per-ticket Lifecycle view. All list views share the same filters (status, state, tags, assigned, search), so you can narrow to e.g. <code>?tag=bug</code> and see only bug tickets in any view.</p>
 
         <h3>List</h3>
         <p>The default view at <code>/</code>. A sortable table of tickets showing id, age, priority, state, title, assignee, and tags. Subissues are grouped under their parent with an expandable <code>[+N]</code> toggle and indented rows. Click a ticket to see its detail page at <code>/t/&lt;id&gt;</code>.</p>
@@ -104,30 +104,30 @@
 
         <p>Each card shows the ticket id, title, priority, assignee, and tags. Subissues are nested under their parent card with an expandable <code>[+N]</code> toggle. Click a card to open the detail page. Empty closed-state columns (resolved, wontfix, etc.) are hidden to reduce clutter; they appear when closed tickets match the active filter.</p>
 
-        <h3>Flow</h3>
-        <p>A dependency graph view at <code>/flow</code>. Tickets appear as nodes and their relationships as edges, rendered with <a href="https://xyflow.com/">React Flow</a> loaded from a CDN (no build step required).</p>
+        <h3>Lifecycle</h3>
+        <p>A per-ticket state-transition graph at <code>/t/&lt;id&gt;/flow</code>, linked from each ticket's detail page. It reconstructs the ticket's state history from the git-meta metadata log and renders the journey through its states over time, rendered with <a href="https://xyflow.com/">React Flow</a>.</p>
 
         <div class="terminal dark">
-          <div class="term-header"><span>FLOW VIEW</span></div>
+          <div class="term-header"><span>LIFECYCLE VIEW</span></div>
           <div class="term-body">
             <div class="line"><span class="prompt">$</span> ti serve</div>
-            <div class="line dim"># navigate to /flow or click "Flow" in the nav</div>
+            <div class="line dim"># open a ticket detail page, then click "Lifecycle"</div>
+            <div class="line dim"># or go directly to /t/&lt;id&gt;/flow</div>
             <div class="line">&nbsp;</div>
-            <div class="line dim">  [parent] ----dashed----> [child]</div>
-            <div class="line dim">  [ticket] ----solid-----> [dependency]</div>
+            <div class="line dim">  [new] &mdash;#1&middot;2d&mdash;> [in-progress] &mdash;#2&middot;5h&mdash;> [review]</div>
+            <div class="line dim">                                &lt;-#3&middot;1h&mdash; (back-edge: revisited)</div>
+            <div class="line dim">  [review] &mdash;#4&middot;3d&mdash;> [resolved &check;]</div>
           </div>
         </div>
 
-        <p>Edge types:</p>
-        <ul>
-          <li><strong>Solid animated</strong> &mdash; dependency edges (<code>depends_on</code>). Ticket A depends on ticket B.</li>
-          <li><strong>Dashed</strong> &mdash; parent/child edges. Parent ticket links to its sub-issue.</li>
-        </ul>
+        <p>The graph shows one node per unique state, positioned left-to-right by first visit. Edges represent transitions and are labeled with their sequence number and the duration spent in the source state. <strong>Loops</strong> &mdash; a ticket that bounces <code>review &rarr; in-progress &rarr; review</code> &mdash; draw as dashed red back-edges so revisited states are immediately visible. Nodes visited more than once get a <code>&times;N</code> badge; the current state node has a highlighted border.</p>
 
-        <p>Nodes are positioned in columns by state (like the kanban). The view is read-only: nodes aren't draggable, but you can pan (drag) and zoom (scroll). Click a node's id to open the detail page.</p>
+        <p>Below the graph, a <strong>timeline</strong> lists every field change grouped by the state window it happened in: comments added, tags changed, assignment updates, priority/points set, etc. Each step shows a timestamp and who made the change. This mirrors the GitHub Actions pattern of a job graph on top and a step log beneath.</p>
+
+        <p>React, ReactDOM, and @xyflow/react are bundled locally (no CDN dependencies) and the view respects the system dark/light theme. Nodes are draggable; pan (drag) and zoom (scroll) work as expected.</p>
 
         <h2>Filtering</h2>
-        <p>All three views accept the same query parameters as <code>ti list</code>:</p>
+        <p>The List and Kanban views accept the same query parameters as <code>ti list</code>:</p>
 
         <div class="terminal">
           <div class="term-header"><span>FILTERS</span></div>
@@ -135,7 +135,7 @@
             <div class="line"><span class="prompt">$</span> # open in browser:</div>
             <div class="line dim">http://127.0.0.1:8177/?tag=bug</div>
             <div class="line dim">http://127.0.0.1:8177/kanban?state=blocked</div>
-            <div class="line dim">http://127.0.0.1:8178/flow?assigned=you@example.com&amp;all=1</div>
+            <div class="line dim">http://127.0.0.1:8177/?assigned=you@example.com&amp;all=1</div>
           </div>
         </div>
 
@@ -154,7 +154,7 @@
         </div>
 
         <h2>Detail Pages</h2>
-        <p>Each ticket has a detail page at <code>/t/&lt;id&gt;</code> showing all fields, description, spec, and comments. The id can be a full UUID or any unique prefix.</p>
+        <p>Each ticket has a detail page at <code>/t/&lt;id&gt;</code> showing all fields, description, spec, and comments. The id can be a full UUID or any unique prefix. A <strong>Lifecycle</strong> link in the detail page header opens the per-ticket state-transition graph at <code>/t/&lt;id&gt;/flow</code>.</p>
 
         <div class="terminal dark">
           <div class="term-header"><span>DETAIL</span></div>

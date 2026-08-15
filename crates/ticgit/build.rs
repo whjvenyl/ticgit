@@ -34,6 +34,29 @@ fn main() {
         "cargo:rustc-env=TICGIT_SCHEMA_V1_PATH={}",
         schema_v1.display()
     );
+
+    // Vendor assets for the `ti serve` flow view (React + @xyflow/react
+    // UMD bundles, served locally so there are no CDN dependencies).
+    let flow_vendor = manifest_dir.join("vendor/flow");
+    for &name in &[
+        "react.min.js",
+        "react-dom.min.js",
+        "xyflow.min.js",
+        "xyflow.css",
+        "jsx-runtime-shim.js",
+    ] {
+        let src = flow_vendor.join(name);
+        println!("cargo:rerun-if-changed={}", src.display());
+        let dst = out_dir.join(name);
+        fs::copy(&src, &dst).unwrap_or_else(|error| {
+            panic!(
+                "failed to copy vendor asset {} to {}: {error}",
+                src.display(),
+                dst.display()
+            )
+        });
+        println!("cargo:rustc-env=TICGIT_VENDOR_{}={}", name.replace(['.', '-'], "_").to_uppercase(), dst.display());
+    }
 }
 
 fn copy_doc(
