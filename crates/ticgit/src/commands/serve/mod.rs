@@ -1,17 +1,24 @@
-//! `ti serve` - a small read-only web view of the repo's tickets.
+//! `ti serve` - a small web view of the repo's tickets.
 //!
 //! Shows the same thing the TUI's issue list does (id, age, priority,
 //! title, tags) plus a per-ticket detail page, served over plain HTTP
 //! from a hand-rolled `std::net` listener so we pull in no web stack.
 //!
-//! The ticket pages live in [`tickets`]; this module owns the listener,
-//! the request/response plumbing, and the shared page chrome.
+//! By default the view is read-only. Pass `--edit` to enable inline
+//! mutation forms on the detail page (comment, state, assign, priority,
+//! tags). Every mutation is a POST that runs the same `TicketStore`
+//! calls the CLI does, then redirects back to the ticket (PRG).
+//!
+//! The ticket pages live in [`tickets`]; the POST handlers live in
+//! [`edit`]; this module owns the listener, the request/response
+//! plumbing, and the shared page chrome.
 
+mod edit;
 mod kanban;
 mod flow;
 mod tickets;
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
@@ -27,6 +34,8 @@ use crate::render::{self, NickMap};
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Cap on the request line + headers we're willing to read.
 const MAX_HEADER_BYTES: usize = 16 * 1024;
+/// Cap on a POST body (comments/specs are small).
+const MAX_BODY_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Parser)]
 pub struct Args {
@@ -41,12 +50,32 @@ pub struct Args {
     /// Open the served page in your browser.
     #[arg(long = "open")]
     pub open: bool,
+
+    /// Enable inline edit forms on the detail page. Off by default;
+    /// the server is read-only without this.
+    #[arg(long = "edit")]
+    pub edit: bool,
+}
+
+/// Per-server state shared by every request: whether edits are allowed
+/// and the CSRF token that every edit form must echo back.
+struct Server {
+    edit: bool,
+    csrf: String,
 }
 
 pub fn run(args: Args) -> Result<()> {
     // Fail early (and with the usual error) if we're not in a ticgit repo.
     let store = open_store()?;
     drop(store);
+
+    let server = Server {
+        edit: args.edit,
+        csrf: generate_csrf_token(),
+    };
+    if args.edit {
+        println!("ti serve: edit mode is ON — mutations will write to the ticgit store");
+    }
 
     let listener = TcpListener::bind((args.bind.as_str(), args.port))
         .with_context(|| format!("binding {}:{}", args.bind, args.port))?;
@@ -60,7 +89,7 @@ pub fn run(args: Args) -> Result<()> {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
-                if let Err(err) = handle_connection(stream) {
+                if let Err(err) = handle_connection(stream, &server) {
                     eprintln!("ti serve: {err:#}");
                 }
             }
@@ -70,7 +99,20 @@ pub fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-fn handle_connection(mut stream: TcpStream) -> Result<()> {
+/// A random-ish token good enough for localhost CSRF. We don't need
+/// cryptographic strength; we need something a cross-site request
+/// can't guess, generated once per server start.
+fn generate_csrf_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0)
+        ^ (std::process::id() as u128);
+    format!("{seed:032x}")
+}
+
+fn handle_connection(mut stream: TcpStream, server: &Server) -> Result<()> {
     let _ = stream.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = stream.set_write_timeout(Some(REQUEST_TIMEOUT));
 
@@ -79,19 +121,22 @@ fn handle_connection(mut stream: TcpStream) -> Result<()> {
         None => return Ok(()),
     };
 
-    let response = match route(&request) {
+    let response = match route(&request, server) {
         Ok(response) => response,
         Err(err) => Response::html(500, error_page("500 - server error", &format!("{err:#}"))),
     };
     response.write_to(&mut stream)
 }
 
-/// A parsed request line: everything we care about from the client.
+/// A parsed request: everything we care about from the client. The
+/// `body` is the raw bytes of a POST (form-urlencoded); `form` parses
+/// it on demand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Request {
     method: String,
     path: String,
     params: Vec<(String, String)>,
+    body: Vec<u8>,
 }
 
 impl Request {
@@ -113,6 +158,21 @@ impl Request {
     fn flag(&self, key: &str) -> bool {
         matches!(self.param(key), Some("1" | "true" | "yes" | ""))
     }
+
+    /// Parsed `application/x-www-form-urlencoded` body. Empty for GET.
+    fn form(&self) -> Vec<(String, String)> {
+        let body = std::str::from_utf8(&self.body).unwrap_or("");
+        parse_query(body)
+    }
+
+    /// First value for a form field, trimmed.
+    fn form_field(&self, key: &str) -> Option<String> {
+        self.form()
+            .into_iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+    }
 }
 
 fn read_request(stream: &TcpStream) -> Result<Option<Request>> {
@@ -121,8 +181,10 @@ fn read_request(stream: &TcpStream) -> Result<Option<Request>> {
     if reader.read_line(&mut line)? == 0 {
         return Ok(None);
     }
-    // Drain headers so the client doesn't see a reset before our response.
+    // Collect headers so the client doesn't see a reset before our
+    // response, and so we can read Content-Length for POST bodies.
     let mut read = line.len();
+    let mut content_length: Option<usize> = None;
     loop {
         let mut header = String::new();
         let n = reader.read_line(&mut header)?;
@@ -130,8 +192,25 @@ fn read_request(stream: &TcpStream) -> Result<Option<Request>> {
         if n == 0 || header == "\r\n" || header == "\n" || read > MAX_HEADER_BYTES {
             break;
         }
+        if let Some((name, value)) = header.split_once(':') {
+            if name.trim().eq_ignore_ascii_case("content-length") {
+                if let Ok(len) = value.trim().parse::<usize>() {
+                    content_length = Some(len.min(MAX_BODY_BYTES));
+                }
+            }
+        }
     }
-    Ok(parse_request_line(&line))
+
+    let mut body = Vec::new();
+    if let Some(len) = content_length {
+        body.resize(len, 0);
+        reader.read_exact(&mut body)?;
+    }
+
+    Ok(parse_request_line(&line).map(|mut req| {
+        req.body = body;
+        req
+    }))
 }
 
 fn parse_request_line(line: &str) -> Option<Request> {
@@ -146,6 +225,7 @@ fn parse_request_line(line: &str) -> Option<Request> {
         method,
         path: percent_decode(path),
         params: parse_query(query),
+        body: Vec::new(),
     })
 }
 
@@ -204,7 +284,21 @@ fn percent_encode(value: &str) -> String {
 
 // -- routing ---------------------------------------------------------------
 
-fn route(request: &Request) -> Result<Response> {
+fn route(request: &Request, server: &Server) -> Result<Response> {
+    // POST is only ever accepted on /t/<id>/<action> edit routes, and
+    // only when edit mode is on. Everything else stays GET/HEAD.
+    if request.method == "POST" {
+        if !server.edit {
+            return Ok(Response::html(
+                405,
+                error_page(
+                    "405 - method not allowed",
+                    "This server is read-only. Restart with `ti serve --edit` to mutate tickets.",
+                ),
+            ));
+        }
+        return edit::route_post(request, server);
+    }
     if request.method != "GET" && request.method != "HEAD" {
         return Ok(Response::html(
             405,
@@ -213,8 +307,8 @@ fn route(request: &Request) -> Result<Response> {
     }
 
     match request.path.as_str() {
-        "/" => tickets::list_response(request),
-        "/kanban" => kanban::response(request),
+        "/" => tickets::list_response(request, server),
+        "/kanban" => kanban::response(request, server),
         "/tickets.json" => tickets::json_response(request),
         "/favicon.ico" => Ok(Response::empty(204)),
         path => {
@@ -225,9 +319,9 @@ fn route(request: &Request) -> Result<Response> {
             if let Some(reference) = path.strip_prefix("/t/").filter(|r| !r.is_empty()) {
                 // /t/<id>/flow → lifecycle view; everything else → detail.
                 if let Some(reference) = reference.strip_suffix("/flow") {
-                    return flow::response(request, reference);
+                    return flow::response(request, reference, server);
                 }
-                return tickets::detail_response(reference);
+                return tickets::detail_response(reference, server, request);
             }
             Ok(Response::html(
                 404,
@@ -243,15 +337,21 @@ struct Page {
     current_user: String,
     nicks: NickMap,
     now: OffsetDateTime,
+    /// Whether inline edit forms should be rendered.
+    edit: bool,
+    /// CSRF token echoed into every edit form's hidden field.
+    csrf: String,
 }
 
 impl Page {
-    fn new(store: &TicketStore) -> Result<Self> {
+    fn new(store: &TicketStore, server: &Server) -> Result<Self> {
         Ok(Self {
             repo: repo_name(),
             current_user: store.email().to_string(),
             nicks: render::build_nick_map(&store.list_users().unwrap_or_default()),
             now: OffsetDateTime::now_utc(),
+            edit: server.edit,
+            csrf: server.csrf.clone(),
         })
     }
 }
@@ -368,7 +468,26 @@ background:var(--chip);border-radius:6px;padding:12px}\
 .detail-nav{display:flex;gap:4px;margin-top:10px}\
 .detail-nav a{padding:3px 10px;border-radius:999px;color:var(--dim);background:var(--chip)}\
 .detail-nav a:hover{background:var(--hover);text-decoration:none}\
-.detail-nav a.active{background:var(--accent);color:#fff}";
+.detail-nav a.active{background:var(--accent);color:#fff}\
+.edit-error{background:#fef2f2;color:#b91c1c;border:1px solid #fecaca;border-radius:6px;\
+padding:8px 10px;margin:0 0 16px}@media(prefers-color-scheme:dark){.edit-error{background:#2a1212;\
+color:#fca5a5;border-color:#5b1f1f}}\
+section.edit{margin-top:24px}\
+.edit-form{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:0 0 10px;\
+padding:10px;background:var(--chip);border-radius:6px}\
+.edit-form label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim);\
+text-transform:uppercase;letter-spacing:.04em;flex:1 1 200px}\
+.edit-form input,.edit-form select,.edit-form textarea{font:inherit;padding:5px 8px;\
+border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--fg);\
+font-size:13px;text-transform:none;letter-spacing:0}\
+.edit-form textarea{resize:vertical;min-height:3em}\
+.edit-form button{font:inherit;padding:5px 14px;border:1px solid var(--accent);\
+background:var(--accent);color:#fff;border-radius:6px;cursor:pointer}\
+.edit-form button:hover{filter:brightness(1.08)}\
+.edit-tag-remove{flex:0 0 auto;align-items:center}\
+.edit-tag-remove span{margin-right:4px}\
+.edit-comment{flex-direction:column;align-items:stretch}\
+.edit-comment label{flex:1 1 auto}";
 
 const KANBAN_SCRIPT: &str = "<script>\
 function kanbanToggle(b){{var g=b.closest('.kgroup');var c=g.querySelector('.kchildren');\
@@ -430,6 +549,8 @@ struct Response {
     status: u16,
     content_type: &'static str,
     body: Vec<u8>,
+    /// Set on 3xx redirects; written as the `Location` header.
+    location: Option<String>,
 }
 
 impl Response {
@@ -438,6 +559,7 @@ impl Response {
             status,
             content_type,
             body,
+            location: None,
         }
     }
 
@@ -449,15 +571,33 @@ impl Response {
         Self::new(status, "text/plain; charset=utf-8", Vec::new())
     }
 
+    /// `303 See Other` — used by every successful POST so a refresh
+    /// doesn't resubmit. The body is a tiny HTML link for non-browser
+    /// clients; browsers follow the `Location` header.
+    fn redirect(location: &str) -> Self {
+        let body = format!(
+            "<!doctype html><meta charset=utf-8><title>See Other</title>\
+             <a href=\"{}\">continue</a>",
+            escape(location)
+        );
+        let mut resp = Self::html(303, body);
+        resp.location = Some(location.to_string());
+        resp
+    }
+
     fn write_to(&self, stream: &mut TcpStream) -> Result<()> {
-        let head = format!(
+        let mut head = format!(
             "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n\
-             Cache-Control: no-store\r\nConnection: close\r\n\r\n",
+             Cache-Control: no-store\r\nConnection: close\r\n",
             self.status,
             reason(self.status),
             self.content_type,
             self.body.len()
         );
+        if let Some(location) = &self.location {
+            head.push_str(&format!("Location: {}\r\n", location));
+        }
+        head.push_str("\r\n");
         stream.write_all(head.as_bytes())?;
         stream.write_all(&self.body)?;
         stream.flush()?;
@@ -469,6 +609,7 @@ fn reason(status: u16) -> &'static str {
     match status {
         200 => "OK",
         204 => "No Content",
+        303 => "See Other",
         404 => "Not Found",
         405 => "Method Not Allowed",
         500 => "Internal Server Error",
@@ -500,6 +641,20 @@ mod tests {
         parse_request_line(&format!("GET {target} HTTP/1.1\r\n")).unwrap()
     }
 
+    fn readonly_server() -> Server {
+        Server {
+            edit: false,
+            csrf: "test-csrf".to_string(),
+        }
+    }
+
+    fn edit_server() -> Server {
+        Server {
+            edit: true,
+            csrf: "test-csrf".to_string(),
+        }
+    }
+
     #[test]
     fn parses_request_line_into_path_and_params() {
         let req = request("/?status=closed&tag=bug&tag=ui");
@@ -523,11 +678,36 @@ mod tests {
     }
 
     #[test]
+    fn form_body_is_parsed_into_fields() {
+        let mut req = parse_request_line("POST /t/abc/comment HTTP/1.1\r\n").unwrap();
+        req.body = b"body=hello+world&csrf=test-csrf".to_vec();
+        assert_eq!(req.form_field("body"), Some("hello world".to_string()));
+        assert_eq!(req.form_field("csrf"), Some("test-csrf".to_string()));
+        assert_eq!(req.form_field("missing"), None);
+    }
+
+    #[test]
     fn unknown_paths_are_404_and_non_get_is_405() {
-        let response = route(&request("/nope")).unwrap();
+        let server = readonly_server();
+        let response = route(&request("/nope"), &server).unwrap();
         assert_eq!(response.status, 404);
 
         let post = parse_request_line("POST / HTTP/1.1\r\n").unwrap();
-        assert_eq!(route(&post).unwrap().status, 405);
+        // Read-only server rejects POST everywhere.
+        assert_eq!(route(&post, &server).unwrap().status, 405);
+    }
+
+    #[test]
+    fn post_to_non_edit_path_is_405_even_in_edit_mode() {
+        let server = edit_server();
+        let post = parse_request_line("POST / HTTP/1.1\r\n").unwrap();
+        assert_eq!(route(&post, &server).unwrap().status, 405);
+    }
+
+    #[test]
+    fn redirect_response_carries_location_header() {
+        let resp = Response::redirect("/t/abc");
+        assert_eq!(resp.status, 303);
+        assert_eq!(resp.location.as_deref(), Some("/t/abc"));
     }
 }

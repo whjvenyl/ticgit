@@ -5,12 +5,14 @@
 //! parent module.
 
 use anyhow::Result;
-use ticgit_lib::{Filter, SearchFilter, SortOrder, Ticket, TicketLifecycle, TicketStatus};
+use ticgit_lib::{
+    Filter, SearchFilter, SortOrder, Ticket, TicketLifecycle, TicketState, TicketStatus,
+};
 use time::format_description::well_known::Rfc3339;
 
 use super::{
     document, error_page, escape, filter_chip, flatten, hidden_input, percent_encode, tag_hue,
-    Page, Request, Response,
+    Page, Request, Response, Server,
 };
 use crate::commands::open_store;
 use crate::render;
@@ -41,7 +43,7 @@ impl View {
 
 // -- responses -------------------------------------------------------------
 
-pub(super) fn list_response(request: &Request) -> Result<Response> {
+pub(super) fn list_response(request: &Request, server: &Server) -> Result<Response> {
     let store = open_store()?;
     let query = ListQuery::from_request(request);
     // The list view groups subissues under their parent, so always
@@ -49,7 +51,7 @@ pub(super) fn list_response(request: &Request) -> Result<Response> {
     let mut filter = query.filter()?;
     filter.hide_subissues = false;
     let tickets = ticgit_lib::query::apply(store.list()?, &filter);
-    let page = Page::new(&store)?;
+    let page = Page::new(&store, server)?;
     Ok(Response::html(200, list_page(&page, &query, &tickets)))
 }
 
@@ -68,7 +70,7 @@ pub(super) fn json_response(request: &Request) -> Result<Response> {
     ))
 }
 
-pub(super) fn detail_response(reference: &str) -> Result<Response> {
+pub(super) fn detail_response(reference: &str, server: &Server, request: &Request) -> Result<Response> {
     let store = open_store()?;
     let id = match store.resolve_id(reference) {
         Ok(id) => id,
@@ -80,8 +82,11 @@ pub(super) fn detail_response(reference: &str) -> Result<Response> {
         }
     };
     let ticket = store.load(&id)?;
-    let page = Page::new(&store)?;
-    Ok(Response::html(200, detail_page(&page, &ticket)))
+    let page = Page::new(&store, server)?;
+    // An `?error=...` param means a POST failed and we're re-rendering
+    // with a banner; the edit module passes the message URL-encoded.
+    let error = request.param("error").map(str::to_string);
+    Ok(Response::html(200, detail_page(&page, &ticket, error.as_deref())))
 }
 
 // -- query -----------------------------------------------------------------
@@ -574,7 +579,7 @@ fn active_filters(query: &ListQuery) -> String {
     format!("<div class=\"filters\">{}</div>", chips.join(""))
 }
 
-fn detail_page(page: &Page, ticket: &Ticket) -> String {
+fn detail_page(page: &Page, ticket: &Ticket, error: Option<&str>) -> String {
     let mut body = String::new();
     body.push_str(&format!(
         "<header class=\"detail\"><a class=\"back\" href=\"/\">\u{2190} all tickets</a>\
@@ -591,6 +596,13 @@ fn detail_page(page: &Page, ticket: &Ticket) -> String {
         escape(&ticket.short_id()),
         escape(&ticket.short_id()),
     ));
+
+    if let Some(message) = error {
+        body.push_str(&format!(
+            "<p class=\"edit-error\">{}</p>",
+            escape(message)
+        ));
+    }
 
     let mut fields: Vec<(&str, String)> = Vec::new();
     fields.push(("Status", ticket.status.as_str().to_string()));
@@ -684,10 +696,101 @@ fn detail_page(page: &Page, ticket: &Ticket) -> String {
         body.push_str("</section>");
     }
 
+    if page.edit {
+        body.push_str(&edit_forms(page, ticket));
+    }
+
     document(
         &format!("{} \u{b7} {}", ticket.short_id(), ticket.title),
         &body,
     )
+}
+
+/// Inline mutation forms, only rendered in edit mode. Each form POSTs
+/// to `/t/<id>/<action>` and carries the CSRF token. The handlers in
+/// [`super::edit`] do the work and redirect back here (PRG).
+fn edit_forms(page: &Page, ticket: &Ticket) -> String {
+    let id = ticket.short_id();
+    let csrf = csrf_hidden(page);
+    let mut out = String::new();
+
+    out.push_str("<section class=\"edit\"><h2>Edit</h2>");
+
+    // State — a select over every lifecycle, mirroring `ti state`.
+    let mut state_opts = String::new();
+    for &st in TicketState::ALL {
+        let spec = format!("{}:{}", st.status().as_str(), st.as_str());
+        let selected = if st == ticket.state { " selected" } else { "" };
+        out_push(&mut state_opts, &format!(
+            "<option value=\"{spec}\"{selected}>{spec}</option>",
+        ));
+    }
+    out.push_str(&format!(
+        "<form class=\"edit-form\" method=\"post\" action=\"/t/{id}/state\">{csrf}\
+         <label>State <select name=\"state\">{state_opts}</select></label>\
+         <button type=\"submit\">Set</button></form>",
+    ));
+
+    // Assign — free text (email or nick); empty clears.
+    let assigned = ticket.assigned.as_deref().unwrap_or("");
+    out.push_str(&format!(
+        "<form class=\"edit-form\" method=\"post\" action=\"/t/{id}/assign\">{csrf}\
+         <label>Assigned <input type=\"text\" name=\"assigned\" value=\"{}\" \
+         placeholder=\"email or nick (blank to clear)\"></label>\
+         <button type=\"submit\">Set</button></form>",
+        escape(assigned),
+    ));
+
+    // Priority — small number; blank clears.
+    let priority = ticket.priority.map(|p| p.to_string()).unwrap_or_default();
+    out.push_str(&format!(
+        "<form class=\"edit-form\" method=\"post\" action=\"/t/{id}/priority\">{csrf}\
+         <label>Priority <input type=\"number\" name=\"priority\" value=\"{}\" \
+         min=\"0\" placeholder=\"blank to clear\"></label>\
+         <button type=\"submit\">Set</button></form>",
+        escape(&priority),
+    ));
+
+    // Tags — add a tag, plus a remove button per existing tag.
+    out.push_str(&format!(
+        "<form class=\"edit-form\" method=\"post\" action=\"/t/{id}/tags\">{csrf}\
+         <label>Tags <input type=\"text\" name=\"add\" placeholder=\"add a tag\"></label>\
+         <button type=\"submit\">Add</button></form>",
+    ));
+    if !ticket.tags.is_empty() {
+        for tag in &ticket.tags {
+            out.push_str(&format!(
+                "<form class=\"edit-form edit-tag-remove\" method=\"post\" action=\"/t/{id}/tags\">{csrf}\
+                 <input type=\"hidden\" name=\"remove\" value=\"{}\">\
+                 <span class=\"tag tag-{}\">{}</span>\
+                 <button type=\"submit\">remove</button></form>",
+                escape(tag),
+                tag_hue(tag),
+                escape(tag),
+            ));
+        }
+    }
+
+    // Comment — a textarea, appended to the comment thread.
+    out.push_str(&format!(
+        "<form class=\"edit-form edit-comment\" method=\"post\" action=\"/t/{id}/comment\">{csrf}\
+         <label>Comment <textarea name=\"body\" rows=\"3\" placeholder=\"add a comment\"></textarea></label>\
+         <button type=\"submit\">Comment</button></form>",
+    ));
+
+    out.push_str("</section>");
+    out
+}
+
+fn csrf_hidden(page: &Page) -> String {
+    format!(
+        "<input type=\"hidden\" name=\"csrf\" value=\"{}\">",
+        escape(&page.csrf)
+    )
+}
+
+fn out_push(buf: &mut String, s: &str) {
+    buf.push_str(s);
 }
 
 fn short_uuid(id: &uuid::Uuid) -> String {
@@ -739,6 +842,15 @@ mod tests {
             current_user: "tester@example.com".to_string(),
             nicks: NickMap::new(),
             now: OffsetDateTime::UNIX_EPOCH,
+            edit: false,
+            csrf: "test-csrf".to_string(),
+        }
+    }
+
+    fn edit_page() -> Page {
+        Page {
+            edit: true,
+            ..page()
         }
     }
 
@@ -858,11 +970,54 @@ mod tests {
             at: OffsetDateTime::UNIX_EPOCH,
             body: "on it".to_string(),
         });
-        let html = detail_page(&page(), &t);
+        let html = detail_page(&page(), &t, None);
         assert!(html.contains("fix parser"));
         assert!(html.contains("in-progress"));
         assert!(html.contains("a longer\nexplanation"));
         assert!(html.contains("Comments (1)"));
         assert!(html.contains("on it"));
+    }
+
+    #[test]
+    fn detail_page_omits_edit_forms_when_edit_mode_is_off() {
+        let t = ticket(
+            "d7f2d8f6-d6ec-3da1-a180-0a33fb090d59",
+            "x",
+            TicketState::New,
+        );
+        let html = detail_page(&page(), &t, None);
+        assert!(!html.contains("<section class=\"edit\">"));
+        assert!(!html.contains("name=\"csrf\""));
+    }
+
+    #[test]
+    fn detail_page_renders_edit_forms_and_csrf_when_edit_mode_is_on() {
+        let t = ticket(
+            "d7f2d8f6-d6ec-3da1-a180-0a33fb090d59",
+            "x",
+            TicketState::New,
+        );
+        let html = detail_page(&edit_page(), &t, None);
+        assert!(html.contains("<section class=\"edit\">"));
+        assert!(html.contains("name=\"csrf\""));
+        assert!(html.contains("value=\"test-csrf\""));
+        // All five action routes are present.
+        assert!(html.contains("action=\"/t/d7f2d8/state\""));
+        assert!(html.contains("action=\"/t/d7f2d8/assign\""));
+        assert!(html.contains("action=\"/t/d7f2d8/priority\""));
+        assert!(html.contains("action=\"/t/d7f2d8/tags\""));
+        assert!(html.contains("action=\"/t/d7f2d8/comment\""));
+    }
+
+    #[test]
+    fn detail_page_renders_error_banner_when_error_is_set() {
+        let t = ticket(
+            "d7f2d8f6-d6ec-3da1-a180-0a33fb090d59",
+            "x",
+            TicketState::New,
+        );
+        let html = detail_page(&page(), &t, Some("nope, bad state"));
+        assert!(html.contains("class=\"edit-error\""));
+        assert!(html.contains("nope, bad state"));
     }
 }

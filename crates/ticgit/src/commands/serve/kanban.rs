@@ -11,12 +11,12 @@ use anyhow::Result;
 use ticgit_lib::{Ticket, TicketState, TicketStatus};
 use uuid::Uuid;
 
-use super::{document, escape, flatten, tag_hue, Page, Request, Response};
+use super::{document, escape, flatten, tag_hue, Page, Request, Response, Server};
 use super::tickets::{header, ListQuery, View};
 use crate::commands::open_store;
 use crate::render;
 
-pub(super) fn response(request: &Request) -> Result<Response> {
+pub(super) fn response(request: &Request, server: &Server) -> Result<Response> {
     let store = open_store()?;
     let query = ListQuery::from_request(request);
     // Kanban is a board — always show subissues so the full work
@@ -24,7 +24,7 @@ pub(super) fn response(request: &Request) -> Result<Response> {
     let mut filter = query.filter()?;
     filter.hide_subissues = false;
     let tickets = ticgit_lib::query::apply(store.list()?, &filter);
-    let page = Page::new(&store)?;
+    let page = Page::new(&store, server)?;
     Ok(Response::html(200, kanban_page(&page, &query, &tickets)))
 }
 
@@ -268,6 +268,8 @@ mod tests {
             current_user: "tester@example.com".to_string(),
             nicks: NickMap::new(),
             now: OffsetDateTime::UNIX_EPOCH,
+            edit: false,
+            csrf: "test-csrf".to_string(),
         }
     }
 

@@ -20,7 +20,7 @@ use anyhow::Result;
 use ticgit_lib::{Ticket, TicketState};
 use time::{Duration, OffsetDateTime};
 
-use super::{escape, Page, Request, Response};
+use super::{escape, Page, Request, Response, Server};
 use crate::commands::history::{db_path_for, query_history, HistoryEntry};
 use crate::commands::{open_store, SessionGitDir};
 use crate::render;
@@ -28,7 +28,7 @@ use crate::timefmt::relative_time;
 
 // -- response ---------------------------------------------------------------
 
-pub(super) fn response(_request: &Request, reference: &str) -> Result<Response> {
+pub(super) fn response(_request: &Request, reference: &str, server: &Server) -> Result<Response> {
     let store = open_store()?;
     let id = match store.resolve_id(reference) {
         Ok(id) => id,
@@ -40,7 +40,7 @@ pub(super) fn response(_request: &Request, reference: &str) -> Result<Response> 
         }
     };
     let ticket = store.load(&id)?;
-    let page = Page::new(&store)?;
+    let page = Page::new(&store, server)?;
 
     // Try to load history; fall back to current-state-only if the
     // git-meta sqlite DB isn't available (e.g. fresh clone).
@@ -668,6 +668,8 @@ mod tests {
             current_user: "tester@example.com".to_string(),
             nicks: NickMap::new(),
             now: OffsetDateTime::UNIX_EPOCH + Duration::days(10),
+            edit: false,
+            csrf: "test-csrf".to_string(),
         }
     }
 
