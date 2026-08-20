@@ -5,7 +5,7 @@
 main() {
   set -eu
 
-  REPO="schacon/ticgit"
+  REPO="whjvenyl/ticgit"
   INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
   for cmd in command uname tr curl tar mkdir; do

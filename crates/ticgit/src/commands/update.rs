@@ -7,7 +7,7 @@ use std::process::Command;
 use anyhow::{Context, Result};
 use clap::Parser;
 
-const REPO: &str = "schacon/ticgit";
+const REPO: &str = "whjvenyl/ticgit";
 
 #[derive(Debug, Parser)]
 pub struct Args {

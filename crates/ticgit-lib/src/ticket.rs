@@ -439,7 +439,7 @@ mod tests {
 
     #[test]
     fn validate_code_uri_accepts_valid_formats() {
-        assert!(validate_code_uri("https://github.com/schacon/ticgit:sc-branch-1").is_ok());
+        assert!(validate_code_uri("https://github.com/whjvenyl/ticgit:sc-branch-1").is_ok());
         assert!(validate_code_uri("https://gitlab.com/group/project:main").is_ok());
         assert!(validate_code_uri("http://example.com/repo:feature/fix").is_ok());
     }
@@ -447,11 +447,11 @@ mod tests {
     #[test]
     fn validate_code_uri_rejects_invalid_formats() {
         // No colon separator
-        assert!(validate_code_uri("https://github.com/schacon/ticgit").is_err());
+        assert!(validate_code_uri("https://github.com/whjvenyl/ticgit").is_err());
         // Not HTTP
-        assert!(validate_code_uri("git@github.com:schacon/ticgit:main").is_err());
+        assert!(validate_code_uri("git@github.com:whjvenyl/ticgit:main").is_err());
         // Empty branch
-        assert!(validate_code_uri("https://github.com/schacon/ticgit:").is_err());
+        assert!(validate_code_uri("https://github.com/whjvenyl/ticgit:").is_err());
         // No path after host
         assert!(validate_code_uri("https://github.com:main").is_err());
     }

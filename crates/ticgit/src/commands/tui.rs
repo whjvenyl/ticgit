@@ -15028,9 +15028,9 @@ mod tests {
     fn git_review_branch_choices_filter_workspace_and_connected_branches() {
         let connected = BTreeSet::from(["review-cli".to_string()]);
         let refs = b"gitbutler/workspace\t1779261511\tGitButler\t<gitbutler@gitbutler.com>\n\
-master\t1778595979\tScott Chacon\t<schacon@gmail.com>\n\
-review-cli\t1779106266\tScott Chacon\t<schacon@gmail.com>\n\
-origin/review-cli\t1779106267\tScott Chacon\t<schacon@gmail.com>\n\
+master\t1778595979\twhjvenyl\t<encecity@gmail.com>\n\
+review-cli\t1779106266\twhjvenyl\t<encecity@gmail.com>\n\
+origin/review-cli\t1779106267\twhjvenyl\t<encecity@gmail.com>\n\
 feature\t1779106268\tDev\t<dev@example.com>\n\
 meta/tickets\t1779106269\tMeta\t<meta@example.com>\n";
 
