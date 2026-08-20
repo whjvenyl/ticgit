@@ -797,6 +797,44 @@ fn new_reads_title_and_description_from_file() {
 }
 
 #[test]
+fn new_sets_description_from_flag() {
+    let repo = TestRepo::new();
+
+    let output = repo
+        .ti()
+        .args([
+            "new",
+            "--title",
+            "flag title",
+            "--description",
+            "flag description body",
+            "--json",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let json: Value = serde_json::from_slice(&output).unwrap();
+    assert_eq!(json["title"], "flag title");
+    assert_eq!(json["description"], "flag description body");
+}
+
+#[test]
+fn new_rejects_description_with_file() {
+    let repo = TestRepo::new();
+    let file = repo.state_file.path().join("ticket.md");
+    fs::write(&file, "file title\n\nfile description\n").unwrap();
+
+    repo.ti()
+        .args(["new", "-F"])
+        .arg(&file)
+        .args(["--description", "conflict"])
+        .assert()
+        .failure();
+}
+
+#[test]
 #[cfg(unix)]
 fn edit_updates_title_and_description() {
     let repo = TestRepo::new();

@@ -19,6 +19,10 @@ pub struct Args {
     #[arg(short = 'F', long = "file", conflicts_with = "title")]
     pub file: Option<PathBuf>,
 
+    /// Ticket description. Sets the description without opening `$EDITOR`.
+    #[arg(long = "description", conflicts_with = "file")]
+    pub description: Option<String>,
+
     /// Comma- or space-separated list of tags to apply on creation.
     #[arg(short = 'g', long = "tags")]
     pub tags: Option<String>,
@@ -70,7 +74,12 @@ pub fn run(args: Args) -> Result<()> {
             Some(t) if !t.trim().is_empty() => t.trim().to_string(),
             _ => editor::capture("Ticket title")?.context("ticket title cannot be empty")?,
         };
-        (title, None)
+        let description = args
+            .description
+            .as_ref()
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty());
+        (title, description)
     };
 
     let comment = if args.comment_edit {
