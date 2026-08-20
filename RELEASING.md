@@ -20,17 +20,11 @@ them, and creates a GitHub Release with auto-generated notes.
 ./scripts/bump-version.sh 0.4.0
 ```
 
-This updates `version` in the root `Cargo.toml` and version strings in
-`docs/index.html`.
+This updates:
 
-Then manually update the two `ticgit-lib` path-dependency versions in
-`crates/ticgit/Cargo.toml` so they match:
-
-```toml
-ticgit-lib = { version = "0.4.0", path = "../ticgit-lib" }
-# ...
-ticgit-lib = { version = "0.4.0", path = "../ticgit-lib", features = ["test-support"] }
-```
+- `version` in the root `Cargo.toml`
+- `ticgit-lib` path-dependency versions in `crates/ticgit/Cargo.toml`
+- version strings in `docs/index.html`
 
 ### 2. Verify
 
